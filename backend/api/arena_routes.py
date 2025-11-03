@@ -106,6 +106,7 @@ def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
     Returns win rate as a ratio (0.0 to 1.0).
     """
     if not trades:
+        logger.debug("No trades found for win rate calculation")
         return None
     
     # Group trades by symbol
@@ -114,29 +115,38 @@ def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
     for trade in trades:
         symbol_trades[trade.symbol].append(trade)
     
-    completed_trades = []  # List of (profit, is_win) tuples
+    completed_trades = []  # List of profit values for completed trades
     
     # Process each symbol's trades using FIFO
     for symbol, symbol_trade_list in symbol_trades.items():
         # Sort by trade time
         symbol_trade_list.sort(key=lambda t: t.trade_time)
         
-        # FIFO queue: list of (quantity, avg_cost, commission) for buy trades
+        # FIFO queue: list of buy trades waiting to be matched
         buy_queue = []
+        
+        buy_count = 0
+        sell_count = 0
         
         for trade in symbol_trade_list:
             trade_qty = float(trade.quantity)
+            if trade_qty <= 0:
+                continue
+                
             trade_price = float(trade.price)
             trade_commission = float(trade.commission or 0)
+            side = (trade.side or "").upper().strip()
             
-            if trade.side.upper() == "BUY":
+            if side == "BUY":
+                buy_count += 1
                 # Add to buy queue
                 buy_queue.append({
                     "quantity": trade_qty,
                     "price": trade_price,
                     "commission": trade_commission,
                 })
-            elif trade.side.upper() == "SELL":
+            elif side == "SELL":
+                sell_count += 1
                 # Match with buy trades using FIFO
                 sell_qty_remaining = trade_qty
                 sell_price = trade_price
@@ -152,10 +162,9 @@ def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
                     matched_qty = min(sell_qty_remaining, buy_qty)
                     
                     # Calculate profit/loss for this matched portion
-                    # Profit = (sell_price - buy_price) * quantity - buy_commission - sell_commission
                     # Proportionally allocate commissions based on matched quantity
-                    buy_cost = buy_price * matched_qty + buy_commission * (matched_qty / buy_qty)
-                    sell_revenue = sell_price * matched_qty - sell_commission * (matched_qty / trade_qty)
+                    buy_cost = buy_price * matched_qty + buy_commission * (matched_qty / buy_qty) if buy_qty > 0 else 0
+                    sell_revenue = sell_price * matched_qty - sell_commission * (matched_qty / trade_qty) if trade_qty > 0 else 0
                     profit = sell_revenue - buy_cost
                     
                     # Record this as a completed trade
@@ -168,15 +177,21 @@ def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
                     # Remove buy from queue if fully consumed
                     if buy["quantity"] <= 0:
                         buy_queue.pop(0)
+        
+        logger.debug(f"Symbol {symbol}: {buy_count} buys, {sell_count} sells")
     
     if not completed_trades:
+        logger.debug(f"No completed trades found. Total trades: {len(trades)}")
         return None
     
     # Calculate win rate: percentage of trades with profit > 0
     wins = len([p for p in completed_trades if p > 0])
     total = len(completed_trades)
     
-    return wins / total if total > 0 else None
+    win_rate = wins / total if total > 0 else None
+    logger.debug(f"Win rate calculation: {wins} wins out of {total} completed trades = {win_rate}")
+    
+    return win_rate
 
 
 def _aggregate_account_stats(db: Session, account: Account) -> Dict[str, Optional[float]]:
@@ -229,7 +244,9 @@ def _aggregate_account_stats(db: Session, account: Account) -> Dict[str, Optiona
 
     # Calculate win rate based on completed trades (historical positions only)
     # This excludes current open positions and only considers buy-sell pairs
+    logger.debug(f"Calculating win rate for account {account.id} ({account.name}) with {trade_count} trades")
     win_rate = _calculate_win_rate_from_trades(trades)
+    logger.debug(f"Win rate result: {win_rate}")
     
     # Calculate loss rate as complement of win rate
     loss_rate = (1.0 - win_rate) if win_rate is not None else None
