@@ -47,25 +47,53 @@ if [ ! -d "$FRONTEND_DIR" ]; then
     exit 1
 fi
 
+# Function to check and install Node.js
+install_nodejs() {
+    if ! command -v node &> /dev/null; then
+        echo "Installing Node.js..."
+        # Use NodeSource repository for latest LTS version
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        
+        if ! command -v node &> /dev/null; then
+            echo "ERROR: Failed to install Node.js"
+            exit 1
+        fi
+        echo "Node.js installed successfully: $(node --version)"
+        echo "npm installed: $(npm --version)"
+    else
+        echo "Node.js already installed: $(node --version)"
+    fi
+}
+
 # Function to check and install pnpm
 install_pnpm() {
     if ! command -v pnpm &> /dev/null; then
         echo "Installing pnpm..."
-        if command -v npm &> /dev/null; then
-            npm install -g pnpm
-        else
-            echo "Installing pnpm via official installer..."
-            curl -fsSL https://get.pnpm.io/install.sh | sh -
+        # Try official installer first (installs to user directory, no sudo needed)
+        echo "Installing pnpm via official installer..."
+        curl -fsSL https://get.pnpm.io/install.sh | sh -
+        
+        # Update PATH for current session
+        if [ -d "$HOME/.local/share/pnpm" ]; then
             export PATH="$HOME/.local/share/pnpm:$PATH"
+        fi
+        
+        # If still not found, try npm with sudo as fallback
+        if ! command -v pnpm &> /dev/null; then
+            if command -v npm &> /dev/null; then
+                echo "Official installer failed, trying npm install with sudo..."
+                sudo npm install -g pnpm
+            fi
         fi
 
         if ! command -v pnpm &> /dev/null; then
             echo "ERROR: Failed to install pnpm"
             exit 1
         fi
-        echo "pnpm installed successfully"
+        echo "pnpm installed successfully: $(pnpm --version)"
     else
-        echo "pnpm already installed"
+        echo "pnpm already installed: $(pnpm --version)"
     fi
 }
 
@@ -73,6 +101,11 @@ install_pnpm() {
 build_frontend() {
     echo "Building frontend..."
     cd "$FRONTEND_DIR"
+
+    # Ensure PATH includes pnpm
+    if [ -d "$HOME/.local/share/pnpm" ]; then
+        export PATH="$HOME/.local/share/pnpm:$PATH"
+    fi
 
     # Always install/update frontend dependencies
     echo "Installing frontend dependencies..."
@@ -95,8 +128,23 @@ build_frontend() {
     cd "$BACKEND_DIR"
 }
 
+# Install Node.js if needed
+install_nodejs
+
+# Update PATH after Node.js installation
+export PATH="/usr/bin:$PATH"
+
 # Install pnpm if needed
 install_pnpm
+
+# Ensure PATH includes pnpm (refresh after installation)
+if [ -d "$HOME/.local/share/pnpm" ]; then
+    export PATH="$HOME/.local/share/pnpm:$PATH"
+fi
+# Also check global npm location
+if [ -d "/usr/lib/node_modules/.bin" ]; then
+    export PATH="/usr/lib/node_modules/.bin:$PATH"
+fi
 
 # Build frontend
 build_frontend
