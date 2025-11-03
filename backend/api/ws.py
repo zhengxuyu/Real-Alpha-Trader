@@ -10,7 +10,7 @@ from typing import Dict, Optional, Set
 logger = logging.getLogger(__name__)
 
 from database.connection import SessionLocal
-from database.models import Account, AIDecisionLog, CryptoPrice, Trade, User
+from database.models import Account, AIDecisionLog, CryptoPrice, Position, Trade, User
 from fastapi import WebSocket, WebSocketDisconnect
 from repositories.account_repo import get_account, get_or_create_default_account
 from repositories.order_repo import list_orders
@@ -68,13 +68,19 @@ class ConnectionManager:
             try:
                 # Send message - FastAPI WebSocket will raise exception if connection is closed
                 await ws.send_text(payload)
-            except (RuntimeError, ConnectionError, WebSocketDisconnect) as e:
-                # Connection is closed or error occurred - mark for removal
+            except (RuntimeError, ConnectionError, WebSocketDisconnect, OSError) as e:
+                # Connection is closed or error occurred - silently remove (expected behavior)
                 connections_to_remove.append(ws)
             except Exception as e:
-                # Other unexpected errors
-                logger.warning(f"Unexpected error sending to WebSocket (account {account_id}): {type(e).__name__}: {e}")
-                connections_to_remove.append(ws)
+                # Check if it's a connection-related exception by name
+                exc_name = type(e).__name__
+                if exc_name in ("ClientDisconnected", "ConnectionClosedError", "ConnectionClosedOK"):
+                    # Connection closed exceptions - silently remove
+                    connections_to_remove.append(ws)
+                else:
+                    # Other unexpected errors - log at debug level without stack trace
+                    logger.debug(f"Unexpected error sending to WebSocket (account {account_id}): {exc_name}: {e}")
+                    connections_to_remove.append(ws)
 
         # Remove closed connections
         if connections_to_remove:
@@ -100,13 +106,22 @@ class ConnectionManager:
                         websockets.discard(ws)
                         continue
                     await ws.send_text(payload)
-                except Exception as e:
-                    # Log the error and remove broken connection
-                    logger.warning(
-                        f"Failed to broadcast message to WebSocket (account {account_id}): {type(e).__name__}: {e}",
-                        exc_info=True,
-                    )
+                except (WebSocketDisconnect, RuntimeError, ConnectionError, OSError) as e:
+                    # Client disconnected or connection error - silently remove connection
+                    # These are expected when clients disconnect and don't need logging
                     websockets.discard(ws)
+                except Exception as e:
+                    # Check if it's a connection-related exception by name
+                    exc_name = type(e).__name__
+                    if exc_name in ("ClientDisconnected", "ConnectionClosedError", "ConnectionClosedOK"):
+                        # Connection closed exceptions - silently remove
+                        websockets.discard(ws)
+                    else:
+                        # Other unexpected errors - log at debug level without stack trace
+                        logger.debug(
+                            f"Failed to broadcast message to WebSocket (account {account_id}): {exc_name}: {e}"
+                        )
+                        websockets.discard(ws)
 
     def has_connections(self) -> bool:
         return any(self.active_connections.values())
@@ -275,6 +290,20 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
     logger.debug(f"_send_snapshot_optimized: account_id={account_id}, cash=${current_cash:.2f}")
     logging.info(f"[SNAPSHOT] Sending snapshot for account {account_id}, cash=${current_cash:.2f}")
 
+    # Get avg_cost from database for each position
+    # Binance API doesn't provide avg_cost, so we need to get it from our database
+    db_positions = db.query(Position).filter(
+        Position.account_id == account_id,
+        Position.market == "CRYPTO"
+    ).all()
+    
+    # Create a map of symbol -> avg_cost from database
+    db_avg_cost_map = {pos.symbol: float(pos.avg_cost) for pos in db_positions if float(pos.avg_cost) > 0}
+    if db_avg_cost_map:
+        logger.info(f"_send_snapshot_optimized: Loaded avg_cost from DB: {db_avg_cost_map}")
+    else:
+        logger.warning(f"_send_snapshot_optimized: No avg_cost found in DB for account {account_id}")
+    
     # Convert Binance positions to format expected by frontend
     positions = [
         {
@@ -285,7 +314,8 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
             "market": "CRYPTO",
             "quantity": float(pos["quantity"]),
             "available_quantity": float(pos.get("available_quantity", pos["quantity"])),
-            "avg_cost": float(pos.get("avg_cost", 0)),
+            # Use database avg_cost if available, otherwise fallback to Binance value (usually 0)
+            "avg_cost": db_avg_cost_map.get(pos["symbol"], float(pos.get("avg_cost", 0))),
         }
         for i, pos in enumerate(positions_data)
     ]
@@ -364,6 +394,25 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
 
     for p in positions:
         price = price_cache.get((p["symbol"], p["market"]))
+        quantity = float(p["quantity"])
+        avg_cost = float(p["avg_cost"])
+        
+        # Calculate market value and unrealized P&L
+        market_value = None
+        unrealized_pnl = None
+        if price is not None:
+            market_value = float(price) * quantity
+            # Unrealized P&L = Current Value - Cost Basis
+            cost_basis = avg_cost * quantity
+            unrealized_pnl = market_value - cost_basis
+            # Debug log for first position to verify calculation
+            if p["symbol"] in ["BTC", "BNB", "ETH", "SOL"]:
+                logger.info(
+                    f"[P&L] {p['symbol']}: price=${price:.2f}, qty={quantity:.8f}, "
+                    f"avg_cost=${avg_cost:.2f}, market_value=${market_value:.2f}, "
+                    f"cost_basis=${cost_basis:.2f}, unrealized_pnl=${unrealized_pnl:.2f}"
+                )
+        
         enriched_positions.append(
             {
                 "id": p["id"],
@@ -371,19 +420,26 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
                 "symbol": p["symbol"],
                 "name": p["name"],
                 "market": p["market"],
-                "quantity": float(p["quantity"]),
+                "quantity": quantity,
                 "available_quantity": float(p["available_quantity"]),
-                "avg_cost": float(p["avg_cost"]),
+                "avg_cost": avg_cost,
                 "last_price": float(price) if price is not None else None,
-                "market_value": (float(price) * float(p["quantity"])) if price is not None else None,
+                "market_value": market_value,
+                "unrealized_pnl": unrealized_pnl,
             }
         )
 
+    # Calculate total unrealized P&L
+    total_unrealized_pnl = sum(
+        (pos.get("unrealized_pnl") or 0) for pos in enriched_positions
+    )
+    
     # Prepare response data - exclude expensive asset curve calculation for frequent updates
     response_data = {
         "type": "snapshot_fast",  # Different type to indicate this is optimized
         "overview": overview,
         "positions": enriched_positions,
+        "total_unrealized_pnl": total_unrealized_pnl,
         "orders": [
             {
                 "id": o.id,
@@ -468,6 +524,20 @@ async def _send_snapshot(db: Session, account_id: int):
         positions_data = []
         orders_data = []
 
+    # Get avg_cost from database for each position
+    # Binance API doesn't provide avg_cost, so we need to get it from our database
+    db_positions = db.query(Position).filter(
+        Position.account_id == account_id,
+        Position.market == "CRYPTO"
+    ).all()
+    
+    # Create a map of symbol -> avg_cost from database
+    db_avg_cost_map = {pos.symbol: float(pos.avg_cost) for pos in db_positions if float(pos.avg_cost) > 0}
+    if db_avg_cost_map:
+        logger.info(f"_send_snapshot: Loaded avg_cost from DB: {db_avg_cost_map}")
+    else:
+        logger.warning(f"_send_snapshot: No avg_cost found in DB for account {account_id}")
+    
     # Convert Binance positions to format expected by frontend
     positions = [
         {
@@ -476,7 +546,8 @@ async def _send_snapshot(db: Session, account_id: int):
             "symbol": pos["symbol"],
             "quantity": float(pos["quantity"]),
             "available_quantity": float(pos["available_quantity"]),
-            "avg_cost": float(pos["avg_cost"]),
+            # Use database avg_cost if available, otherwise fallback to Binance value (usually 0)
+            "avg_cost": db_avg_cost_map.get(pos["symbol"], float(pos.get("avg_cost", 0))),
             "market": "CRYPTO",
         }
         for i, pos in enumerate(positions_data)
@@ -547,6 +618,26 @@ async def _send_snapshot(db: Session, account_id: int):
             if "cookie" in error_msg.lower() and price_error_message is None:
                 price_error_message = error_msg
 
+        quantity = float(p["quantity"])
+        # Use database avg_cost if available, otherwise fallback to Binance value (usually 0)
+        avg_cost = db_avg_cost_map.get(p["symbol"], float(p.get("avg_cost", 0)))
+        
+        # Calculate market value and unrealized P&L
+        market_value = None
+        unrealized_pnl = None
+        if price is not None:
+            market_value = float(price) * quantity
+            # Unrealized P&L = Current Value - Cost Basis
+            cost_basis = avg_cost * quantity
+            unrealized_pnl = market_value - cost_basis
+            # Debug log for first position to verify calculation
+            if p["symbol"] in ["BTC", "BNB", "ETH", "SOL"]:
+                logger.info(
+                    f"[P&L _send_snapshot] {p['symbol']}: price=${price:.2f}, qty={quantity:.8f}, "
+                    f"avg_cost=${avg_cost:.2f}, market_value=${market_value:.2f}, "
+                    f"cost_basis=${cost_basis:.2f}, unrealized_pnl=${unrealized_pnl:.2f}"
+                )
+
         enriched_positions.append(
             {
                 "id": p["id"],
@@ -554,19 +645,26 @@ async def _send_snapshot(db: Session, account_id: int):
                 "symbol": p["symbol"],
                 "name": p.get("name", p["symbol"]),  # Use symbol as name if not provided
                 "market": p.get("market", "CRYPTO"),
-                "quantity": float(p["quantity"]),
+                "quantity": quantity,
                 "available_quantity": float(p.get("available_quantity", p["quantity"])),
-                "avg_cost": float(p.get("avg_cost", 0)),
+                "avg_cost": avg_cost,
                 "last_price": float(price) if price is not None else None,
-                "market_value": (float(price) * float(p["quantity"])) if price is not None else None,
+                "market_value": market_value,
+                "unrealized_pnl": unrealized_pnl,
             }
         )
+
+    # Calculate total unrealized P&L
+    total_unrealized_pnl = sum(
+        (pos.get("unrealized_pnl") or 0) for pos in enriched_positions
+    )
 
     # Prepare response data
     response_data = {
         "type": "snapshot",
         "overview": overview,
         "positions": enriched_positions,
+        "total_unrealized_pnl": total_unrealized_pnl,
         "orders": [
             {
                 "id": o["id"],

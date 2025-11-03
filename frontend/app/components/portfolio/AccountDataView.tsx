@@ -41,6 +41,7 @@ interface Position {
   avg_cost: number
   last_price?: number | null
   market_value?: number | null
+  unrealized_pnl?: number | null
 }
 
 interface Order {
@@ -420,7 +421,7 @@ export default function AccountDataView(props: AccountDataViewProps) {
 
           <div className="flex flex-wrap items-center gap-4 text-xs uppercase tracking-wide text-muted-foreground">
             <div className="flex flex-col leading-tight">
-              <span>Cash Available</span>
+              <span>USDT Available</span>
               <FlipNumber
                 value={aggregatedTotals.availableCash}
                 prefix="$"
@@ -429,7 +430,7 @@ export default function AccountDataView(props: AccountDataViewProps) {
               />
             </div>
             <div className="flex flex-col leading-tight">
-              <span>Frozen Cash</span>
+              <span>Frozen USDT</span>
               <FlipNumber
                 value={aggregatedTotals.frozenCash}
                 prefix="$"

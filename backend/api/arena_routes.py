@@ -447,9 +447,20 @@ def get_positions_snapshot(
         position_items: List[dict] = []
         total_unrealized = 0.0
 
+        # Get avg_cost from database for each position
+        # Binance API doesn't provide avg_cost, so we need to get it from our database
+        db_positions = db.query(Position).filter(
+            Position.account_id == account.id,
+            Position.market == "CRYPTO"
+        ).all()
+        
+        # Create a map of symbol -> avg_cost from database
+        db_avg_cost_map = {pos.symbol: float(pos.avg_cost) for pos in db_positions if float(pos.avg_cost) > 0}
+        
         for pos in positions_data:
             quantity = float(pos["quantity"])
-            avg_cost = float(pos["avg_cost"])
+            # Use database avg_cost if available, otherwise fallback to Binance value (usually 0)
+            avg_cost = db_avg_cost_map.get(pos["symbol"], float(pos.get("avg_cost", 0)))
             base_notional = quantity * avg_cost
 
             last_price = _get_latest_price(pos["symbol"], "CRYPTO")

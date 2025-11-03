@@ -29,6 +29,7 @@ interface Position {
   avg_cost: number
   last_price?: number | null
   market_value?: number | null
+  unrealized_pnl?: number | null
 }
 
 interface Order {

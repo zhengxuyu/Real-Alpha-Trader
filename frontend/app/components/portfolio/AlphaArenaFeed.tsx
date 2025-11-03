@@ -181,14 +181,31 @@ export default function AlphaArenaFeed({
             const newAccountPositions = msg.positions.filter((p: any) => p.account_id === accountId)
 
             if (newAccountPositions.length > 0) {
+              // Calculate total unrealized P&L from positions
+              const totalUnrealizedPnl = newAccountPositions.reduce(
+                (sum: number, pos: any) => sum + (pos.unrealized_pnl || 0),
+                0
+              )
+
+              // Calculate total assets from positions
+              const totalAssets = newAccountPositions.reduce(
+                (sum: number, pos: any) => sum + (pos.current_value || pos.market_value || 0),
+                0
+              )
+
+              // Find existing account to preserve some fields
+              const existingAccount = prev.find((acc) => acc.account_id === accountId)
+
               // Construct account snapshot from positions
               const accountSnapshot = {
                 account_id: accountId,
-                account_name: prev.find((acc) => acc.account_id === accountId)?.account_name || '',
-                model: prev.find((acc) => acc.account_id === accountId)?.model || null,
-                available_cash: 0, // Will be updated by next snapshot
-                total_unrealized_pnl: 0,
-                total_return: null,
+                account_name: existingAccount?.account_name || '',
+                model: existingAccount?.model || null,
+                available_cash: existingAccount?.available_cash || 0,
+                total_unrealized_pnl: totalUnrealizedPnl,
+                total_assets: totalAssets + (existingAccount?.available_cash || 0),
+                initial_capital: existingAccount?.initial_capital || totalAssets + (existingAccount?.available_cash || 0),
+                total_return: existingAccount?.total_return || null,
                 positions: newAccountPositions,
               }
               const next = [...otherAccounts, accountSnapshot]
@@ -452,64 +469,64 @@ export default function AlphaArenaFeed({
                     return (
                       <HighlightWrapper key={`${trade.trade_id}-${trade.trade_time}`} isNew={isNew}>
                         <div className="border border-border bg-muted/40 rounded px-4 py-3 space-y-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            {modelLogo && (
-                              <img
-                                src={modelLogo.src}
-                                alt={modelLogo.alt}
-                                className="h-5 w-5 rounded-full object-contain bg-background"
-                                loading="lazy"
-                              />
-                            )}
-                            <span className="font-semibold text-foreground">{trade.account_name}</span>
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              {modelLogo && (
+                                <img
+                                  src={modelLogo.src}
+                                  alt={modelLogo.alt}
+                                  className="h-5 w-5 rounded-full object-contain bg-background"
+                                  loading="lazy"
+                                />
+                              )}
+                              <span className="font-semibold text-foreground">{trade.account_name}</span>
+                            </div>
+                            <span>{formatDate(trade.trade_time)}</span>
                           </div>
-                          <span>{formatDate(trade.trade_time)}</span>
-                        </div>
-                        <div className="text-sm text-foreground flex flex-wrap items-center gap-2">
-                          <span className="font-semibold">{trade.account_name}</span>
-                          <span>completed a</span>
-                          <span className="uppercase text-primary font-semibold">{trade.direction.toLowerCase()}</span>
-                          <span>trade on</span>
-                          <span className="flex items-center gap-2 font-semibold">
-                            {symbolLogo && (
-                              <img
-                                src={symbolLogo.src}
-                                alt={symbolLogo.alt}
-                                className="h-5 w-5 rounded-full object-contain bg-background"
-                                loading="lazy"
-                              />
-                            )}
-                            {trade.symbol}
-                          </span>
-                          <span>!</span>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted-foreground">
-                          <div>
-                            <span className="block text-[10px] uppercase tracking-wide">Price</span>
-                            <span className="font-medium text-foreground">
-                              <FlipNumber value={trade.price} prefix="$" decimals={2} />
+                          <div className="text-sm text-foreground flex flex-wrap items-center gap-2">
+                            <span className="font-semibold">{trade.account_name}</span>
+                            <span>completed a</span>
+                            <span className="uppercase text-primary font-semibold">{trade.direction.toLowerCase()}</span>
+                            <span>trade on</span>
+                            <span className="flex items-center gap-2 font-semibold">
+                              {symbolLogo && (
+                                <img
+                                  src={symbolLogo.src}
+                                  alt={symbolLogo.alt}
+                                  className="h-5 w-5 rounded-full object-contain bg-background"
+                                  loading="lazy"
+                                />
+                              )}
+                              {trade.symbol}
                             </span>
+                            <span>!</span>
                           </div>
-                          <div>
-                            <span className="block text-[10px] uppercase tracking-wide">Quantity</span>
-                            <span className="font-medium text-foreground">
-                              <FlipNumber value={trade.quantity} decimals={4} />
-                            </span>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                            <div>
+                              <span className="block text-[10px] uppercase tracking-wide">Price</span>
+                              <span className="font-medium text-foreground">
+                                <FlipNumber value={trade.price} prefix="$" decimals={2} />
+                              </span>
+                            </div>
+                            <div>
+                              <span className="block text-[10px] uppercase tracking-wide">Quantity</span>
+                              <span className="font-medium text-foreground">
+                                <FlipNumber value={trade.quantity} decimals={4} />
+                              </span>
+                            </div>
+                            <div>
+                              <span className="block text-[10px] uppercase tracking-wide">Notional</span>
+                              <span className="font-medium text-foreground">
+                                <FlipNumber value={trade.notional} prefix="$" decimals={2} />
+                              </span>
+                            </div>
+                            <div>
+                              <span className="block text-[10px] uppercase tracking-wide">Commission</span>
+                              <span className="font-medium text-foreground">
+                                <FlipNumber value={trade.commission} prefix="$" decimals={2} />
+                              </span>
+                            </div>
                           </div>
-                          <div>
-                            <span className="block text-[10px] uppercase tracking-wide">Notional</span>
-                            <span className="font-medium text-foreground">
-                              <FlipNumber value={trade.notional} prefix="$" decimals={2} />
-                            </span>
-                          </div>
-                          <div>
-                            <span className="block text-[10px] uppercase tracking-wide">Commission</span>
-                            <span className="font-medium text-foreground">
-                              <FlipNumber value={trade.commission} prefix="$" decimals={2} />
-                            </span>
-                          </div>
-                        </div>
                         </div>
                       </HighlightWrapper>
                     )
@@ -555,108 +572,108 @@ export default function AlphaArenaFeed({
                             })
                           }
                         >
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            {modelLogo && (
-                              <img
-                                src={modelLogo.src}
-                                alt={modelLogo.alt}
-                                className="h-5 w-5 rounded-full object-contain bg-background"
-                                loading="lazy"
-                              />
-                            )}
-                            <span className="font-semibold text-foreground">{entry.account_name}</span>
-                          </div>
-                          <span>{formatDate(entry.decision_time)}</span>
-                        </div>
-                        <div className="text-sm font-medium text-foreground">
-                          {(entry.operation || 'UNKNOWN').toUpperCase()} {entry.symbol && (
-                            <span className="inline-flex items-center gap-1">
-                              {symbolLogo && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              {modelLogo && (
                                 <img
-                                  src={symbolLogo.src}
-                                  alt={symbolLogo.alt}
-                                  className="h-4 w-4 rounded-full object-contain bg-background"
+                                  src={modelLogo.src}
+                                  alt={modelLogo.alt}
+                                  className="h-5 w-5 rounded-full object-contain bg-background"
                                   loading="lazy"
                                 />
                               )}
-                              {entry.symbol}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground uppercase tracking-wide">
-                          <span>{formatTriggerMode(entry.trigger_mode)}</span>
-                          <span>{entry.strategy_enabled ? 'Strategy Enabled' : 'Strategy Disabled'}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {isExpanded ? entry.reason : `${entry.reason.slice(0, 160)}${entry.reason.length > 160 ? '…' : ''}`}
-                        </div>
-                        {isExpanded && (
-                          <div className="space-y-2 pt-3">
-                            {[{
-                              label: 'USER_PROMPT' as const,
-                              section: 'prompt' as const,
-                              content: entry.prompt_snapshot,
-                              empty: 'No prompt available',
-                            }, {
-                              label: 'CHAIN_OF_THOUGHT' as const,
-                              section: 'reasoning' as const,
-                              content: entry.reasoning_snapshot,
-                              empty: 'No reasoning available',
-                            }, {
-                              label: 'TRADING_DECISIONS' as const,
-                              section: 'decision' as const,
-                              content: entry.decision_snapshot,
-                              empty: 'No decision payload available',
-                            }].map(({ label, section, content, empty }) => {
-                              const open = isSectionExpanded(entry.id, section)
-                              const displayContent = content?.trim()
-                              return (
-                                <div key={section} className="border border-border/60 rounded-md bg-background/60">
-                                  <button
-                                    type="button"
-                                    className="flex w-full items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      toggleSection(entry.id, section)
-                                    }}
-                                  >
-                                    <span className="flex items-center gap-2">
-                                      <span className="text-xs">{open ? '▼' : '▶'}</span>
-                                      {label.replace(/_/g, ' ')}
-                                    </span>
-                                    <span className="text-[10px] text-muted-foreground/80">{open ? 'Hide details' : 'Show details'}</span>
-                                  </button>
-                                  {open && (
-                                    <div
-                                      className="border-t border-border/40 bg-muted/40 px-3 py-3 text-xs text-muted-foreground"
-                                      onClick={(event) => event.stopPropagation()}
-                                    >
-                                      {displayContent ? (
-                                        <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground/90">
-                                          {displayContent}
-                                        </pre>
-                                      ) : (
-                                        <span className="text-muted-foreground/70">{empty}</span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
+                              <span className="font-semibold text-foreground">{entry.account_name}</span>
+                            </div>
+                            <span>{formatDate(entry.decision_time)}</span>
                           </div>
-                        )}
-                        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground uppercase tracking-wide">
-                          <span>Prev Portion: <span className="font-semibold text-foreground">{(entry.prev_portion * 100).toFixed(1)}%</span></span>
-                          <span>Target Portion: <span className="font-semibold text-foreground">{(entry.target_portion * 100).toFixed(1)}%</span></span>
-                          <span>Total Balance: <span className="font-semibold text-foreground">
-                            <FlipNumber value={entry.total_balance} prefix="$" decimals={2} />
-                          </span></span>
-                          <span>Executed: <span className={`font-semibold ${entry.executed ? 'text-emerald-600' : 'text-amber-600'}`}>{entry.executed ? 'YES' : 'NO'}</span></span>
-                        </div>
-                        <div className="mt-2 text-[11px] text-primary underline">
-                          {isExpanded ? 'Click to collapse' : 'Click to expand'}
-                        </div>
+                          <div className="text-sm font-medium text-foreground">
+                            {(entry.operation || 'UNKNOWN').toUpperCase()} {entry.symbol && (
+                              <span className="inline-flex items-center gap-1">
+                                {symbolLogo && (
+                                  <img
+                                    src={symbolLogo.src}
+                                    alt={symbolLogo.alt}
+                                    className="h-4 w-4 rounded-full object-contain bg-background"
+                                    loading="lazy"
+                                  />
+                                )}
+                                {entry.symbol}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground uppercase tracking-wide">
+                            <span>{formatTriggerMode(entry.trigger_mode)}</span>
+                            <span>{entry.strategy_enabled ? 'Strategy Enabled' : 'Strategy Disabled'}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {isExpanded ? entry.reason : `${entry.reason.slice(0, 160)}${entry.reason.length > 160 ? '…' : ''}`}
+                          </div>
+                          {isExpanded && (
+                            <div className="space-y-2 pt-3">
+                              {[{
+                                label: 'USER_PROMPT' as const,
+                                section: 'prompt' as const,
+                                content: entry.prompt_snapshot,
+                                empty: 'No prompt available',
+                              }, {
+                                label: 'CHAIN_OF_THOUGHT' as const,
+                                section: 'reasoning' as const,
+                                content: entry.reasoning_snapshot,
+                                empty: 'No reasoning available',
+                              }, {
+                                label: 'TRADING_DECISIONS' as const,
+                                section: 'decision' as const,
+                                content: entry.decision_snapshot,
+                                empty: 'No decision payload available',
+                              }].map(({ label, section, content, empty }) => {
+                                const open = isSectionExpanded(entry.id, section)
+                                const displayContent = content?.trim()
+                                return (
+                                  <div key={section} className="border border-border/60 rounded-md bg-background/60">
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        toggleSection(entry.id, section)
+                                      }}
+                                    >
+                                      <span className="flex items-center gap-2">
+                                        <span className="text-xs">{open ? '▼' : '▶'}</span>
+                                        {label.replace(/_/g, ' ')}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground/80">{open ? 'Hide details' : 'Show details'}</span>
+                                    </button>
+                                    {open && (
+                                      <div
+                                        className="border-t border-border/40 bg-muted/40 px-3 py-3 text-xs text-muted-foreground"
+                                        onClick={(event) => event.stopPropagation()}
+                                      >
+                                        {displayContent ? (
+                                          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground/90">
+                                            {displayContent}
+                                          </pre>
+                                        ) : (
+                                          <span className="text-muted-foreground/70">{empty}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground uppercase tracking-wide">
+                            <span>Prev Portion: <span className="font-semibold text-foreground">{(entry.prev_portion * 100).toFixed(1)}%</span></span>
+                            <span>Target Portion: <span className="font-semibold text-foreground">{(entry.target_portion * 100).toFixed(1)}%</span></span>
+                            <span>Total Balance: <span className="font-semibold text-foreground">
+                              <FlipNumber value={entry.total_balance} prefix="$" decimals={2} />
+                            </span></span>
+                            <span>Executed: <span className={`font-semibold ${entry.executed ? 'text-emerald-600' : 'text-amber-600'}`}>{entry.executed ? 'YES' : 'NO'}</span></span>
+                          </div>
+                          <div className="mt-2 text-[11px] text-primary underline">
+                            {isExpanded ? 'Click to collapse' : 'Click to expand'}
+                          </div>
                         </button>
                       </HighlightWrapper>
                     )
@@ -707,7 +724,7 @@ export default function AlphaArenaFeed({
                               </span>
                             </div>
                             <div>
-                              <span className="block text-[10px] text-muted-foreground">Available Cash</span>
+                              <span className="block text-[10px] text-muted-foreground">Available USDT</span>
                               <span className="font-semibold text-foreground">
                                 <FlipNumber value={snapshot.available_cash} prefix="$" decimals={2} />
                               </span>
