@@ -99,6 +99,86 @@ def _compute_sharpe_ratio(returns: List[float]) -> Optional[float]:
     return avg_return / volatility * scaled_factor
 
 
+def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
+    """
+    Calculate win rate based on completed trades (buy-sell pairs).
+    Uses FIFO method to match buy and sell trades.
+    Returns win rate as a ratio (0.0 to 1.0).
+    """
+    if not trades:
+        return None
+    
+    # Group trades by symbol
+    from collections import defaultdict
+    symbol_trades = defaultdict(list)
+    for trade in trades:
+        symbol_trades[trade.symbol].append(trade)
+    
+    completed_trades = []  # List of (profit, is_win) tuples
+    
+    # Process each symbol's trades using FIFO
+    for symbol, symbol_trade_list in symbol_trades.items():
+        # Sort by trade time
+        symbol_trade_list.sort(key=lambda t: t.trade_time)
+        
+        # FIFO queue: list of (quantity, avg_cost, commission) for buy trades
+        buy_queue = []
+        
+        for trade in symbol_trade_list:
+            trade_qty = float(trade.quantity)
+            trade_price = float(trade.price)
+            trade_commission = float(trade.commission or 0)
+            
+            if trade.side.upper() == "BUY":
+                # Add to buy queue
+                buy_queue.append({
+                    "quantity": trade_qty,
+                    "price": trade_price,
+                    "commission": trade_commission,
+                })
+            elif trade.side.upper() == "SELL":
+                # Match with buy trades using FIFO
+                sell_qty_remaining = trade_qty
+                sell_price = trade_price
+                sell_commission = trade_commission
+                
+                while sell_qty_remaining > 0 and buy_queue:
+                    buy = buy_queue[0]
+                    buy_qty = buy["quantity"]
+                    buy_price = buy["price"]
+                    buy_commission = buy["commission"]
+                    
+                    # Calculate how much to match
+                    matched_qty = min(sell_qty_remaining, buy_qty)
+                    
+                    # Calculate profit/loss for this matched portion
+                    # Profit = (sell_price - buy_price) * quantity - buy_commission - sell_commission
+                    # Proportionally allocate commissions based on matched quantity
+                    buy_cost = buy_price * matched_qty + buy_commission * (matched_qty / buy_qty)
+                    sell_revenue = sell_price * matched_qty - sell_commission * (matched_qty / trade_qty)
+                    profit = sell_revenue - buy_cost
+                    
+                    # Record this as a completed trade
+                    completed_trades.append(profit)
+                    
+                    # Update quantities
+                    sell_qty_remaining -= matched_qty
+                    buy["quantity"] -= matched_qty
+                    
+                    # Remove buy from queue if fully consumed
+                    if buy["quantity"] <= 0:
+                        buy_queue.pop(0)
+    
+    if not completed_trades:
+        return None
+    
+    # Calculate win rate: percentage of trades with profit > 0
+    wins = len([p for p in completed_trades if p > 0])
+    total = len(completed_trades)
+    
+    return wins / total if total > 0 else None
+
+
 def _aggregate_account_stats(db: Session, account: Account) -> Dict[str, Optional[float]]:
     """Aggregate trade and decision statistics for a given account."""
     # Get balance and positions from Binance in real-time (single API call)
@@ -147,6 +227,13 @@ def _aggregate_account_stats(db: Session, account: Account) -> Dict[str, Optiona
     first_trade_time = trades[0].trade_time.isoformat() if trades else None
     last_trade_time = trades[-1].trade_time.isoformat() if trades else None
 
+    # Calculate win rate based on completed trades (historical positions only)
+    # This excludes current open positions and only considers buy-sell pairs
+    win_rate = _calculate_win_rate_from_trades(trades)
+    
+    # Calculate loss rate as complement of win rate
+    loss_rate = (1.0 - win_rate) if win_rate is not None else None
+
     decisions: List[AIDecisionLog] = (
         db.query(AIDecisionLog)
         .filter(AIDecisionLog.account_id == account.id)
@@ -157,11 +244,6 @@ def _aggregate_account_stats(db: Session, account: Account) -> Dict[str, Optiona
 
     biggest_gain, biggest_loss, returns, balance_volatility = _analyze_balance_series(balances)
     sharpe_ratio = _compute_sharpe_ratio(returns)
-
-    wins = len([r for r in returns if r > 0])
-    losses = len([r for r in returns if r < 0])
-    win_rate = wins / len(returns) if returns else None
-    loss_rate = losses / len(returns) if returns else None
 
     executed_decisions = len([d for d in decisions if d.executed == "true"])
     decision_execution_rate = executed_decisions / len(decisions) if decisions else None
