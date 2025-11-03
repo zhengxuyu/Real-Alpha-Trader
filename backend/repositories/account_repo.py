@@ -1,0 +1,129 @@
+from decimal import Decimal
+from typing import List, Optional
+
+from database.models import Account, User
+from sqlalchemy.orm import Session
+
+
+def create_account(
+    db: Session,
+    user_id: int,
+    name: str,
+    account_type: str = "AI",
+    model: str = "gpt-4-turbo",
+    base_url: str = "https://api.openai.com/v1",
+    api_key: str = None,
+    binance_api_key: str = None,
+    binance_secret_key: str = None,
+) -> Account:
+    """Create a new trading account - only stores LLM config and Binance API keys.
+    Balance and positions are fetched from Binance in real-time."""
+    account = Account(
+        user_id=user_id,
+        version="v1",
+        name=name,
+        account_type=account_type,
+        model=model if account_type == "AI" else None,
+        base_url=base_url if account_type == "AI" else None,
+        api_key=api_key if account_type == "AI" else None,
+        binance_api_key=binance_api_key,
+        binance_secret_key=binance_secret_key,
+        is_active="true",
+    )
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return account
+
+
+def get_account(db: Session, account_id: int) -> Optional[Account]:
+    """Get account by ID"""
+    return db.query(Account).filter(Account.id == account_id).first()
+
+
+def get_accounts_by_user(db: Session, user_id: int, active_only: bool = True) -> List[Account]:
+    """Get all accounts for a user"""
+    query = db.query(Account).filter(Account.user_id == user_id)
+    if active_only:
+        query = query.filter(Account.is_active == "true")
+    return query.all()
+
+
+def get_or_create_default_account(
+    db: Session,
+    user_id: int,
+    account_name: str = "Default AI Trader",
+    model: str = "gpt-4-turbo",
+    base_url: str = "https://api.openai.com/v1",
+    api_key: str = "default-key-please-update-in-settings",
+    binance_api_key: str = None,
+    binance_secret_key: str = None,
+) -> Optional[Account]:
+    """Get existing account or create default account for new users.
+    Balance and positions are fetched from Binance in real-time."""
+    # Check if user has any accounts
+    existing_accounts = get_accounts_by_user(db, user_id, active_only=True)
+    if existing_accounts:
+        return existing_accounts[0]  # Return first active account
+
+    # Create default account for new users
+    return create_account(
+        db=db,
+        user_id=user_id,
+        name=account_name,
+        account_type="AI",
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        binance_api_key=binance_api_key,
+        binance_secret_key=binance_secret_key,
+    )
+
+
+def update_account(
+    db: Session, account_id: int, name: str = None, model: str = None, base_url: str = None, api_key: str = None
+) -> Optional[Account]:
+    """Update account information"""
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        return None
+
+    if name is not None:
+        account.name = name
+    if model is not None:
+        account.model = model
+    if base_url is not None:
+        account.base_url = base_url
+    if api_key is not None:
+        account.api_key = api_key
+
+    db.commit()
+    db.refresh(account)
+    return account
+
+
+# DEPRECATED: update_account_cash removed - balance is now fetched from Binance in real-time
+
+
+def deactivate_account(db: Session, account_id: int) -> Optional[Account]:
+    """Deactivate an account"""
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        return None
+
+    account.is_active = "false"
+    db.commit()
+    db.refresh(account)
+    return account
+
+
+def activate_account(db: Session, account_id: int) -> Optional[Account]:
+    """Activate an account"""
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        return None
+
+    account.is_active = "true"
+    db.commit()
+    db.refresh(account)
+    return account
