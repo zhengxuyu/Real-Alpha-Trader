@@ -209,8 +209,18 @@ else
     PYTHON_CMD=".venv/bin/python"
 fi
 
-# Start service in background
-nohup $PYTHON_CMD -m uvicorn main:app --host 0.0.0.0 --port 8802 > ../arena.log 2>&1 &
+# Limit worker processes for safety (default: 2 workers)
+# This prevents excessive resource usage while maintaining reasonable performance
+MAX_WORKERS=${MAX_WORKERS:-2}
+if [ "$MAX_WORKERS" -lt 1 ] || [ "$MAX_WORKERS" -gt 8 ]; then
+    echo "Warning: MAX_WORKERS should be between 1 and 8. Using default: 1"
+    MAX_WORKERS=1
+fi
+
+echo "Starting service with $MAX_WORKERS worker process(es)..."
+
+# Start service in background with worker limit
+nohup $PYTHON_CMD -m uvicorn main:app --host 0.0.0.0 --port 8802 --workers $MAX_WORKERS > ../arena.log 2>&1 &
 echo $! > ../arena.pid
 
 # Wait for service to start with retry logic

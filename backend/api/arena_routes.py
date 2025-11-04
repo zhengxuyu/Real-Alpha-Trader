@@ -99,23 +99,82 @@ def _compute_sharpe_ratio(returns: List[float]) -> Optional[float]:
     return avg_return / volatility * scaled_factor
 
 
-def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
+def _get_system_startup_time(db: Session) -> Optional[datetime]:
+    """
+    Get system startup time from SystemConfig.
+    Returns None if not found (for backward compatibility).
+    """
+    try:
+        from database.models import SystemConfig
+        startup_config = db.query(SystemConfig).filter(SystemConfig.key == "system_startup_time").first()
+        if startup_config and startup_config.value:
+            try:
+                return datetime.fromisoformat(startup_config.value.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                logger.warning(f"Invalid startup time format: {startup_config.value}")
+                return None
+    except Exception as e:
+        logger.debug(f"Failed to get system startup time: {e}")
+    return None
+
+
+def _calculate_win_rate_from_trades(trades: List[Trade], db: Optional[Session] = None) -> Optional[float]:
     """
     Calculate win rate based on completed trades (buy-sell pairs).
     Uses FIFO method to match buy and sell trades.
+    Only counts trades that occurred after system startup.
     Returns win rate as a ratio (0.0 to 1.0).
+    
+    Args:
+        trades: List of all trades
+        db: Database session (optional, used to get system startup time)
     """
     if not trades:
         logger.debug("No trades found for win rate calculation")
         return None
     
-    # Group trades by symbol
+    # Filter trades to only include those after system startup
+    startup_time = None
+    if db:
+        startup_time = _get_system_startup_time(db)
+        if startup_time:
+            # Filter trades to only include those after system startup
+            # Ensure both times are timezone-aware for comparison
+            original_count = len(trades)
+            if startup_time.tzinfo is None:
+                startup_time = startup_time.replace(tzinfo=timezone.utc)
+            
+            filtered_trades = []
+            for t in trades:
+                trade_time = t.trade_time
+                if trade_time.tzinfo is None:
+                    trade_time = trade_time.replace(tzinfo=timezone.utc)
+                if trade_time >= startup_time:
+                    filtered_trades.append(t)
+            
+            trades = filtered_trades
+            filtered_count = len(trades)
+            if original_count != filtered_count:
+                logger.info(
+                    f"Filtered trades for Win Rate: {original_count} total, "
+                    f"{filtered_count} after system startup ({startup_time.isoformat()})"
+                )
+            if not trades:
+                logger.debug(f"No trades found after system startup time: {startup_time.isoformat()}")
+                return None
+        else:
+            logger.debug("System startup time not found, using all trades (backward compatibility mode)")
+    
+    from decimal import Decimal, ROUND_DOWN
     from collections import defaultdict
+    
+    # Group trades by symbol
     symbol_trades = defaultdict(list)
     for trade in trades:
         symbol_trades[trade.symbol].append(trade)
     
     completed_trades = []  # List of profit values for completed trades
+    PROFIT_THRESHOLD = Decimal("0.000001")  # Small threshold for profit comparison to handle floating point precision
     
     # Process each symbol's trades using FIFO
     for symbol, symbol_trade_list in symbol_trades.items():
@@ -129,12 +188,12 @@ def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
         sell_count = 0
         
         for trade in symbol_trade_list:
-            trade_qty = float(trade.quantity)
+            trade_qty = Decimal(str(trade.quantity))
             if trade_qty <= 0:
                 continue
                 
-            trade_price = float(trade.price)
-            trade_commission = float(trade.commission or 0)
+            trade_price = Decimal(str(trade.price))
+            trade_commission = Decimal(str(trade.commission or 0))
             side = (trade.side or "").upper().strip()
             
             if side == "BUY":
@@ -163,19 +222,34 @@ def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
                     
                     # Calculate profit/loss for this matched portion
                     # Proportionally allocate commissions based on matched quantity
-                    buy_cost = buy_price * matched_qty + buy_commission * (matched_qty / buy_qty) if buy_qty > 0 else 0
-                    sell_revenue = sell_price * matched_qty - sell_commission * (matched_qty / trade_qty) if trade_qty > 0 else 0
-                    profit = sell_revenue - buy_cost
+                    if buy_qty > 0:
+                        buy_commission_allocated = buy_commission * (matched_qty / buy_qty)
+                    else:
+                        buy_commission_allocated = Decimal("0")
                     
-                    # Record this as a completed trade
-                    completed_trades.append(profit)
+                    if trade_qty > 0:
+                        sell_commission_allocated = sell_commission * (matched_qty / trade_qty)
+                    else:
+                        sell_commission_allocated = Decimal("0")
+                    
+                    # Calculate costs and revenues with proper precision
+                    buy_cost = (buy_price * matched_qty + buy_commission_allocated).quantize(
+                        Decimal("0.000001"), rounding=ROUND_DOWN
+                    )
+                    sell_revenue = (sell_price * matched_qty - sell_commission_allocated).quantize(
+                        Decimal("0.000001"), rounding=ROUND_DOWN
+                    )
+                    profit = (sell_revenue - buy_cost).quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+                    
+                    # Record this as a completed trade (convert to float for compatibility)
+                    completed_trades.append(float(profit))
                     
                     # Update quantities
                     sell_qty_remaining -= matched_qty
                     buy["quantity"] -= matched_qty
                     
-                    # Remove buy from queue if fully consumed
-                    if buy["quantity"] <= 0:
+                    # Remove buy from queue if fully consumed (with small tolerance for floating point)
+                    if buy["quantity"] <= Decimal("0.00000001"):
                         buy_queue.pop(0)
         
         logger.debug(f"Symbol {symbol}: {buy_count} buys, {sell_count} sells")
@@ -184,12 +258,17 @@ def _calculate_win_rate_from_trades(trades: List[Trade]) -> Optional[float]:
         logger.debug(f"No completed trades found. Total trades: {len(trades)}")
         return None
     
-    # Calculate win rate: percentage of trades with profit > 0
-    wins = len([p for p in completed_trades if p > 0])
+    # Calculate win rate: percentage of trades with profit > threshold
+    # Use a small threshold to handle floating point precision issues
+    threshold = float(PROFIT_THRESHOLD)
+    wins = len([p for p in completed_trades if p > threshold])
     total = len(completed_trades)
     
     win_rate = wins / total if total > 0 else None
-    logger.debug(f"Win rate calculation: {wins} wins out of {total} completed trades = {win_rate}")
+    logger.debug(
+        f"Win rate calculation: {wins} wins out of {total} completed trades = {win_rate:.4f} "
+        f"(threshold: {threshold})"
+    )
     
     return win_rate
 
@@ -244,8 +323,9 @@ def _aggregate_account_stats(db: Session, account: Account) -> Dict[str, Optiona
 
     # Calculate win rate based on completed trades (historical positions only)
     # This excludes current open positions and only considers buy-sell pairs
+    # Only trades after system startup are counted
     logger.debug(f"Calculating win rate for account {account.id} ({account.name}) with {trade_count} trades")
-    win_rate = _calculate_win_rate_from_trades(trades)
+    win_rate = _calculate_win_rate_from_trades(trades, db=db)
     logger.debug(f"Win rate result: {win_rate}")
     
     # Calculate loss rate as complement of win rate

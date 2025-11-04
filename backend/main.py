@@ -320,6 +320,31 @@ def on_startup():
     from services.startup import initialize_services
 
     initialize_services()
+    
+    # Record system startup time for Win Rate calculation
+    # This ensures that only trades after system startup are counted in Win Rate
+    startup_db = SessionLocal()
+    try:
+        from database.models import SystemConfig
+        startup_time = datetime.now(timezone.utc)
+        startup_config = startup_db.query(SystemConfig).filter(SystemConfig.key == "system_startup_time").first()
+        if startup_config:
+            startup_config.value = startup_time.isoformat()
+            startup_config.updated_at = startup_time
+        else:
+            startup_config = SystemConfig(
+                key="system_startup_time",
+                value=startup_time.isoformat(),
+                description="System startup timestamp for Win Rate calculation (only trades after this time are counted)"
+            )
+            startup_db.add(startup_config)
+        startup_db.commit()
+        logger.info(f"System startup time recorded: {startup_time.isoformat()}")
+    except Exception as startup_err:
+        startup_db.rollback()
+        logger.warning(f"Failed to record system startup time: {startup_err}")
+    finally:
+        startup_db.close()
 
 
 @app.on_event("shutdown")
