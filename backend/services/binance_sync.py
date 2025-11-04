@@ -28,6 +28,44 @@ _cache_lock = threading.Lock()
 _balance_positions_cache: Dict[str, tuple] = {}
 _balance_positions_last_call_time: Dict[str, float] = {}
 
+
+def clear_balance_cache(account: Optional[Account] = None) -> None:
+    """
+    Clear cached balance and positions data.
+    
+    Args:
+        account: If provided, clears cache only for this account.
+                 If None, clears cache for all accounts.
+    """
+    global _balance_positions_cache
+    
+    with _cache_lock:
+        if account is None:
+            # Clear all cached data
+            _balance_positions_cache.clear()
+            logger.info("Cleared all balance and positions cache")
+        else:
+            # Clear cache for specific account
+            # Need to match the cache key generation logic used in get_binance_balance_and_positions
+            if not account.binance_api_key:
+                logger.debug(f"Account {account.id} ({account.name}) has no Binance API key, nothing to clear")
+                return
+            
+            import hashlib
+            api_key_hash = hashlib.md5(account.binance_api_key.encode()).hexdigest()[:8]
+            cache_key = f"binance_{account.id}_{api_key_hash}"
+            if cache_key in _balance_positions_cache:
+                old_balance, _, _ = _balance_positions_cache[cache_key]
+                del _balance_positions_cache[cache_key]
+                logger.info(
+                    f"[BALANCE_UPDATE] Cleared balance cache for account {account.id} ({account.name}), "
+                    f"previous cached balance: ${float(old_balance):.2f} USDT"
+                )
+            else:
+                logger.info(
+                    f"[BALANCE_UPDATE] No cache found for account {account.id} ({account.name}) to clear"
+                )
+
 # Global rate limiter for all Binance API calls
 _global_binance_last_call_time: float = 0.0
 _global_binance_lock = threading.Lock()
@@ -186,9 +224,18 @@ def get_binance_balance_and_positions(account: Account) -> Tuple[Optional[Decima
     with _cache_lock:
         if cache_key in _balance_positions_cache:
             cached_balance, cached_positions, cached_time = _balance_positions_cache[cache_key]
-            if current_time - cached_time < cache_ttl:
-                logger.debug(f"Using cached Binance balance and positions for account {account.id}")
+            cache_age = current_time - cached_time
+            if cache_age < cache_ttl:
+                logger.info(
+                    f"[BALANCE_UPDATE] Using cached balance for account {account.id} ({account.name}): "
+                    f"${float(cached_balance):.2f} USDT, cache age: {cache_age:.2f}s"
+                )
                 return cached_balance, cached_positions
+            else:
+                logger.info(
+                    f"[BALANCE_UPDATE] Cache expired for account {account.id} ({account.name}), "
+                    f"cache age: {cache_age:.2f}s, fetching fresh data from Binance"
+                )
 
         # Apply rate limiting
         _cache_lock.release()
@@ -198,6 +245,9 @@ def get_binance_balance_and_positions(account: Account) -> Tuple[Optional[Decima
             _cache_lock.acquire()
 
     try:
+        logger.info(
+            f"[BALANCE_UPDATE] Fetching balance from Binance API for account {account.id} ({account.name})"
+        )
         # Get account information (includes balances)
         account_info = _make_signed_request(
             api_key=account.binance_api_key, secret_key=account.binance_secret_key, endpoint="/api/v3/account"
@@ -233,12 +283,45 @@ def get_binance_balance_and_positions(account: Account) -> Tuple[Optional[Decima
 
         # Thread-safe cache update
         with _cache_lock:
+            # Check if balance changed
+            old_balance = None
+            if cache_key in _balance_positions_cache:
+                old_balance, _, _ = _balance_positions_cache[cache_key]
+            
             _balance_positions_cache[cache_key] = (balance, positions, time.time())
-
-        logger.debug(f"Fetched Binance balance: ${usdt_balance:.2f}, positions: {len(positions)}")
+            
+            # Log balance update
+            if old_balance is not None and old_balance != balance:
+                balance_change = float(balance) - float(old_balance)
+                logger.info(
+                    f"[BALANCE_UPDATE] Balance updated for account {account.id} ({account.name}): "
+                    f"${float(old_balance):.2f} → ${float(balance):.2f} USDT "
+                    f"(change: ${balance_change:+.2f} USDT), positions: {len(positions)}"
+                )
+            else:
+                logger.info(
+                    f"[BALANCE_UPDATE] Balance fetched for account {account.id} ({account.name}): "
+                    f"${float(balance):.2f} USDT, positions: {len(positions)}"
+                )
+        
         return balance, positions
 
     except urllib.error.HTTPError as e:
+        # Clear cache on API failure to avoid returning stale data
+        with _cache_lock:
+            if cache_key in _balance_positions_cache:
+                old_balance, _, _ = _balance_positions_cache[cache_key]
+                del _balance_positions_cache[cache_key]
+                logger.warning(
+                    f"[BALANCE_UPDATE] API error for account {account.id} ({account.name}), "
+                    f"cleared cache (previous balance: ${float(old_balance):.2f} USDT), error code: {e.code}"
+                )
+            else:
+                logger.warning(
+                    f"[BALANCE_UPDATE] API error for account {account.id} ({account.name}), "
+                    f"no cache to clear, error code: {e.code}"
+                )
+        
         if e.code == 401:
             logger.error(
                 f"Binance API authentication failed (401 Unauthorized) for account {account.name}. Please check if the API key and secret key are correct and have proper permissions."
@@ -253,7 +336,22 @@ def get_binance_balance_and_positions(account: Account) -> Tuple[Optional[Decima
             logger.error(f"Binance API HTTP error {e.code} for account {account.name}: {e}", exc_info=True)
         return None, []
     except Exception as e:
-        logger.error(f"Failed to get balance and positions from Binance for account {account.name}: {e}", exc_info=True)
+        # Clear cache on exception to avoid returning stale data
+        with _cache_lock:
+            if cache_key in _balance_positions_cache:
+                old_balance, _, _ = _balance_positions_cache[cache_key]
+                del _balance_positions_cache[cache_key]
+                logger.warning(
+                    f"[BALANCE_UPDATE] Exception for account {account.id} ({account.name}), "
+                    f"cleared cache (previous balance: ${float(old_balance):.2f} USDT), error: {str(e)}"
+                )
+            else:
+                logger.warning(
+                    f"[BALANCE_UPDATE] Exception for account {account.id} ({account.name}), "
+                    f"no cache to clear, error: {str(e)}"
+                )
+        
+        logger.error(f"[BALANCE_UPDATE] Failed to get balance and positions from Binance for account {account.name}: {e}", exc_info=True)
         return None, []
 
 

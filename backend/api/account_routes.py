@@ -23,6 +23,7 @@ from services.ai_decision_service import _extract_text_from_message, build_chat_
 from services.asset_calculator import calc_positions_value
 from services.asset_curve_calculator import invalidate_asset_curve_cache
 from services.broker_adapter import get_balance_and_positions, get_open_orders, get_closed_orders
+from services.binance_sync import clear_balance_cache
 from services.market_data import get_kline_data
 from services.scheduler import reset_auto_trading_job
 from services.trading_strategy import strategy_manager
@@ -464,6 +465,11 @@ async def update_account_settings(account_id: int, payload: dict, db: Session = 
             logger.warning(
                 f"Attempted to update cash for account {account.name} - ignored (cash comes from Binance in real-time)"
             )
+        
+        # If Binance API keys were updated, clear cache to force refresh
+        if "binance_api_key" in payload or "binance_secret_key" in payload:
+            clear_balance_cache(account)
+            logger.info(f"Cleared balance cache for account {account.id} after Binance API key update")
 
         db.commit()
         db.refresh(account)
@@ -866,3 +872,38 @@ async def test_llm_connection(payload: dict):
     except Exception as e:
         logger.error(f"[TEST-LLM] Failed to test LLM connection: {e}", exc_info=True)
         return {"success": False, "message": f"Failed to test LLM connection: {str(e)}"}
+
+
+@router.post("/{account_id}/refresh-balance")
+async def refresh_account_balance(account_id: int, db: Session = Depends(get_db)):
+    """Force refresh account balance from Binance by clearing cache and fetching latest data"""
+    try:
+        account = db.query(Account).filter(Account.id == account_id, Account.is_active == "true").first()
+        
+        if not account:
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        # Clear cache for this account to force fresh fetch
+        clear_balance_cache(account)
+        logger.info(f"Cleared balance cache for account {account_id} ({account.name})")
+
+        # Get fresh balance from Binance
+        try:
+            balance, positions = get_balance_and_positions(account)
+            current_cash = float(balance) if balance is not None else 0.0
+        except Exception as e:
+            logger.error(f"Failed to get balance after cache clear: {e}", exc_info=True)
+            current_cash = 0.0
+
+        return {
+            "account_id": account.id,
+            "account_name": account.name,
+            "current_cash": current_cash,
+            "message": "Balance refreshed successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to refresh balance: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to refresh balance: {str(e)}")

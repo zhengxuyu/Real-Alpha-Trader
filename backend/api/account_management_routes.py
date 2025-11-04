@@ -20,6 +20,7 @@ from repositories.account_repo import (
 from repositories.user_repo import get_user, verify_auth_session
 from schemas.account import AccountCreate, AccountOut, AccountOverview, AccountUpdate
 from services.broker_adapter import get_balance_and_positions
+from services.binance_sync import clear_balance_cache
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -302,3 +303,42 @@ async def get_or_create_default(session_token: str, db: Session = Depends(get_db
     except Exception as e:
         logger.error(f"Failed to get default account: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get default account: {str(e)}")
+
+
+@router.post("/{account_id}/refresh-balance")
+async def refresh_account_balance(account_id: int, session_token: str, db: Session = Depends(get_db)):
+    """Force refresh account balance from Binance by clearing cache and fetching latest data"""
+    try:
+        user_id = await get_current_user_id(session_token, db)
+        account = get_account(db, account_id)
+
+        if not account:
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        if account.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Clear cache for this account to force fresh fetch
+        clear_balance_cache(account)
+        logger.info(f"Cleared balance cache for account {account_id} ({account.name})")
+
+        # Get fresh balance from Binance
+        try:
+            balance, positions = get_balance_and_positions(account)
+            current_cash = float(balance) if balance is not None else 0.0
+        except Exception as e:
+            logger.error(f"Failed to get balance after cache clear: {e}", exc_info=True)
+            current_cash = 0.0
+
+        return {
+            "account_id": account.id,
+            "account_name": account.name,
+            "current_cash": current_cash,
+            "message": "Balance refreshed successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to refresh balance: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to refresh balance: {str(e)}")
