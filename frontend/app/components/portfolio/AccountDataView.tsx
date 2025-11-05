@@ -7,8 +7,7 @@ import {
   ArenaPositionsAccount,
   getArenaPositions,
 } from '@/lib/api'
-import AlphaArenaFeed from './AlphaArenaFeed'
-import ArenaAnalyticsFeed from './ArenaAnalyticsFeed'
+import ArenaFeedSwitcher from './ArenaFeedSwitcher'
 import FlipNumber from './FlipNumber'
 import { getSymbolLogo } from './logoAssets'
 import RealtimePrice from './RealtimePrice'
@@ -40,7 +39,9 @@ interface Position {
   available_quantity: number
   avg_cost: number
   last_price?: number | null
+  current_price?: number | null
   market_value?: number | null
+  current_value?: number | null
   unrealized_pnl?: number | null
 }
 
@@ -111,6 +112,14 @@ export default function AccountDataView(props: AccountDataViewProps) {
     showAssetCurves = true,
     showStrategyPanel = false,
   } = props
+
+  console.log('[AccountDataView] Render start', {
+    showAssetCurves,
+    showStrategyPanel,
+    hasOverview: !!overview,
+    accountRefreshTrigger
+  })
+
   const [selectedArenaAccount, setSelectedArenaAccount] = useState<number | 'all'>('all')
   const [globalPositionSnapshots, setGlobalPositionSnapshots] = useState<ArenaPositionsAccount[]>([])
   const [realtimeTotals, setRealtimeTotals] = useState<{
@@ -120,7 +129,11 @@ export default function AccountDataView(props: AccountDataViewProps) {
     total_assets: number
   } | null>(null)
   const [realtimeSymbolTotals, setRealtimeSymbolTotals] = useState<Record<string, number> | null>(null)
-  const currentAccountId = overview?.account?.id ?? null
+  const currentAccountId = useMemo(() => {
+    const id = overview?.account?.id ?? null
+    console.log('[AccountDataView] useMemo currentAccountId', { id, hasOverview: !!overview })
+    return id
+  }, [overview])
 
   useEffect(() => {
     let isMounted = true
@@ -204,6 +217,7 @@ export default function AccountDataView(props: AccountDataViewProps) {
   }, [onSwitchAccount, currentAccountId])
 
   const strategyAccounts = useMemo(() => {
+    console.log('[AccountDataView] useMemo strategyAccounts', { accountsCount: props.accounts?.length ?? 0 })
     if (!props.accounts || props.accounts.length === 0) return []
     return props.accounts.map((account: any) => ({
       id: account.id,
@@ -241,7 +255,7 @@ export default function AccountDataView(props: AccountDataViewProps) {
       symbol,
       marketValue: aggregates.get(symbol) ?? 0,
     }))
-  }, [positions, overview?.account?.id])
+  }, [positions, overview])
 
   const globalPositionSummaries = useMemo(() => {
     if (!globalPositionSnapshots.length) {
@@ -291,12 +305,16 @@ export default function AccountDataView(props: AccountDataViewProps) {
       return overview.positions_value
     }
     return accountPositionSummaries.reduce((acc, position) => acc + position.marketValue, 0)
-  }, [overview?.positions_value, accountPositionSummaries])
+  }, [overview, accountPositionSummaries])
 
-  const accountAvailableCash = overview?.account?.current_cash ?? 0
-  const accountFrozenCash = overview?.account?.frozen_cash ?? 0
-  const accountTotalAssets =
-    overview?.total_assets ?? accountAvailableCash + accountFrozenCash + accountPositionsValue
+  const accountAvailableCash = useMemo(() => overview?.account?.current_cash ?? 0, [overview])
+  const accountFrozenCash = useMemo(() => overview?.account?.frozen_cash ?? 0, [overview])
+  const accountTotalAssets = useMemo(() => {
+    if (overview?.total_assets !== undefined && overview.total_assets !== null) {
+      return overview.total_assets
+    }
+    return accountAvailableCash + accountFrozenCash + accountPositionsValue
+  }, [overview, accountAvailableCash, accountFrozenCash, accountPositionsValue])
 
   const aggregatedTotals = useMemo(() => {
     if (realtimeTotals) {
@@ -314,28 +332,28 @@ export default function AccountDataView(props: AccountDataViewProps) {
 
     const globalAvailableCash = hasGlobalSnapshots
       ? globalPositionSnapshots.reduce(
-          (acc, snapshot) => acc + (snapshot.available_cash ?? 0),
-          0,
-        )
+        (acc, snapshot) => acc + (snapshot.available_cash ?? 0),
+        0,
+      )
       : 0
 
     const globalPositionsValue = hasGlobalSnapshots
       ? globalPositionSnapshots.reduce((acc, snapshot) => {
-          const snapshotTotal = snapshot.positions.reduce((sum, position: ArenaPositionItem) => {
-            const currentValue = Number(
-              position.current_value ?? position.notional ?? 0,
-            )
-            return sum + currentValue
-          }, 0)
-          return acc + snapshotTotal
+        const snapshotTotal = snapshot.positions.reduce((sum, position: ArenaPositionItem) => {
+          const currentValue = Number(
+            position.current_value ?? position.notional ?? 0,
+          )
+          return sum + currentValue
         }, 0)
+        return acc + snapshotTotal
+      }, 0)
       : 0
 
     const globalFrozenCash = hasAccountsList
       ? accountsList.reduce(
-          (acc: number, account: any) => acc + Number(account.frozen_cash ?? 0),
-          0,
-        )
+        (acc: number, account: any) => acc + Number(account.frozen_cash ?? 0),
+        0,
+      )
       : 0
 
     if (!hasGlobalSnapshots && !hasAccountsList) {
@@ -368,149 +386,141 @@ export default function AccountDataView(props: AccountDataViewProps) {
     realtimeTotals,
   ])
 
-  if (!overview) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-muted-foreground">Loading account data...</div>
-      </div>
-    )
-  }
-
+  // Always render the component structure to ensure hooks are always called in the same order
+  // Show loading state if overview is null, but render all components with empty/default data
   return (
     <div className="h-full flex flex-col space-y-6 min-h-0">
-      <div className="border border-border rounded-lg bg-card shadow-sm px-4 py-3 flex flex-col gap-4">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 overflow-x-auto pb-1">
-              {positionSummaries.map((position) => {
-                const logo = getSymbolLogo(position.symbol)
-                return (
-                  <div
-                    key={position.symbol}
-                    className="flex items-center gap-3 rounded-md bg-muted/70 px-3 py-2 shadow-sm border border-border/70 w-[160px]"
-                  >
-                    {logo && (
-                      <img
-                        src={logo.src}
-                        alt={logo.alt}
-                        className="h-6 w-6 rounded-full object-contain bg-background"
-                        loading="lazy"
-                      />
-                    )}
-                    <div className="flex flex-col leading-tight">
-                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        {position.symbol}
-                      </span>
-                      <FlipNumber
-                        value={position.marketValue}
-                        prefix="$"
-                        decimals={2}
-                        className="text-sm font-semibold text-primary"
-                      />
-                      <RealtimePrice
-                        symbol={position.symbol}
-                        wsRef={wsRef}
-                        className="mt-0.5"
-                      />
+      {!overview && (
+        <div className="flex items-center justify-center h-96">
+          <div className="text-muted-foreground">Loading account data...</div>
+        </div>
+      )}
+      <div className={overview ? 'block' : 'hidden'}>
+        <div className="border border-border rounded-lg bg-card shadow-sm px-4 py-3 flex flex-col gap-4">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 overflow-x-auto pb-1">
+                {positionSummaries.map((position) => {
+                  const logo = getSymbolLogo(position.symbol)
+                  return (
+                    <div
+                      key={position.symbol}
+                      className="flex items-center gap-3 rounded-md bg-muted/70 px-3 py-2 shadow-sm border border-border/70 w-[160px]"
+                    >
+                      {logo && (
+                        <img
+                          src={logo.src}
+                          alt={logo.alt}
+                          className="h-6 w-6 rounded-full object-contain bg-background"
+                          loading="lazy"
+                        />
+                      )}
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                          {position.symbol}
+                        </span>
+                        <FlipNumber
+                          value={position.marketValue}
+                          prefix="$"
+                          decimals={2}
+                          className="text-sm font-semibold text-primary"
+                        />
+                        <RealtimePrice
+                          symbol={position.symbol}
+                          wsRef={wsRef}
+                          className="mt-0.5"
+                        />
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-xs uppercase tracking-wide text-muted-foreground">
-            <div className="flex flex-col leading-tight">
-              <span>USDT Available</span>
-              <FlipNumber
-                value={aggregatedTotals.availableCash}
-                prefix="$"
-                decimals={2}
-                className="text-base font-semibold text-foreground"
-              />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span>Frozen USDT</span>
-              <FlipNumber
-                value={aggregatedTotals.frozenCash}
-                prefix="$"
-                decimals={2}
-                className="text-base font-semibold text-foreground"
-              />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span>Positions Value</span>
-              <FlipNumber
-                value={aggregatedTotals.positionsValue}
-                prefix="$"
-                decimals={2}
-                className="text-base font-semibold text-foreground"
-              />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span>Total Assets</span>
-              <FlipNumber
-                value={aggregatedTotals.totalAssets}
-                prefix="$"
-                decimals={2}
-                className="text-base font-semibold text-primary"
-              />
+            <div className="flex flex-wrap items-center gap-4 text-xs uppercase tracking-wide text-muted-foreground">
+              <div className="flex flex-col leading-tight">
+                <span>USDT Available</span>
+                <FlipNumber
+                  value={aggregatedTotals.availableCash}
+                  prefix="$"
+                  decimals={2}
+                  className="text-base font-semibold text-foreground"
+                />
+              </div>
+              <div className="flex flex-col leading-tight">
+                <span>Frozen USDT</span>
+                <FlipNumber
+                  value={aggregatedTotals.frozenCash}
+                  prefix="$"
+                  decimals={2}
+                  className="text-base font-semibold text-foreground"
+                />
+              </div>
+              <div className="flex flex-col leading-tight">
+                <span>Positions Value</span>
+                <FlipNumber
+                  value={aggregatedTotals.positionsValue}
+                  prefix="$"
+                  decimals={2}
+                  className="text-base font-semibold text-foreground"
+                />
+              </div>
+              <div className="flex flex-col leading-tight">
+                <span>Total Assets</span>
+                <FlipNumber
+                  value={aggregatedTotals.totalAssets}
+                  prefix="$"
+                  decimals={2}
+                  className="text-base font-semibold text-primary"
+                />
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content - Always render to ensure hooks consistency */}
       <div className="flex-1 min-h-0">
         <div className={`grid gap-6 overflow-hidden ${showAssetCurves ? 'grid-cols-5' : 'grid-cols-1'} h-full min-h-0`}>
-          {/* Asset Curves */}
-          {showAssetCurves && (
-            <div className="col-span-3 min-h-0 border border-border rounded-lg bg-card shadow-sm px-4 py-3 flex flex-col gap-4">
-              <AssetCurveWithData
-                data={allAssetCurves}
-                wsRef={wsRef}
-                highlightAccountId={selectedArenaAccount}
-                onHighlightAccountChange={handleArenaAccountChange}
-              />
-            </div>
-          )}
+          {/* Asset Curves - Always mounted to ensure hooks consistency */}
+          <div className={`col-span-3 min-h-0 border border-border rounded-lg bg-card shadow-sm px-4 py-3 flex flex-col gap-4`} style={{ display: showAssetCurves ? 'flex' : 'none' }}>
+            <AssetCurveWithData
+              key="asset-curve"
+              data={allAssetCurves}
+              wsRef={wsRef}
+              highlightAccountId={selectedArenaAccount}
+              onHighlightAccountChange={handleArenaAccountChange}
+            />
+          </div>
 
-          {/* Tabs and Strategy Panel */}
+          {/* Tabs and Strategy Panel - Always render in same position to maintain hooks consistency */}
           <div className={`${showAssetCurves ? 'col-span-2' : 'col-span-1'} overflow-hidden flex flex-col min-h-0`}>
-          {/* Content Area */}
-          <div className={`flex-1 h-0 overflow-hidden ${showStrategyPanel ? 'grid grid-cols-4 gap-4' : ''}`}>
-            <div className={`${showStrategyPanel ? 'col-span-3' : 'col-span-1'} h-full overflow-hidden flex flex-col border border-border rounded-lg bg-card shadow-sm px-4 py-3 gap-4`}>
-              {showAssetCurves ? (
-                <AlphaArenaFeed
+            {/* Content Area */}
+            <div className={`flex-1 h-0 overflow-hidden ${showStrategyPanel ? 'grid grid-cols-4 gap-4' : ''}`}>
+              <div className={`${showStrategyPanel ? 'col-span-3' : 'col-span-1'} h-full overflow-hidden flex flex-col border border-border rounded-lg bg-card shadow-sm px-4 py-3 gap-4 relative`}>
+                <ArenaFeedSwitcher
+                  showAlpha={showAssetCurves}
                   refreshKey={accountRefreshTrigger}
                   wsRef={wsRef}
                   selectedAccount={selectedArenaAccount}
                   onSelectedAccountChange={handleArenaAccountChange}
                 />
-              ) : (
-                <ArenaAnalyticsFeed
-                  refreshKey={accountRefreshTrigger}
-                  selectedAccount={selectedArenaAccount}
-                  onSelectedAccountChange={handleArenaAccountChange}
-                />
-              )}
-            </div>
+              </div>
 
-            {showStrategyPanel && overview?.account && (
-              <div className="col-span-1 overflow-hidden min-h-0">
+              <div className={`col-span-1 overflow-hidden min-h-0 ${showStrategyPanel && overview?.account ? 'block' : 'hidden'}`}>
                 <StrategyPanel
-                  accountId={overview.account.id}
-                  accountName={overview.account.name}
+                  key="strategy-panel"
+                  accountId={overview?.account?.id ?? 0}
+                  accountName={overview?.account?.name ?? ''}
                   refreshKey={accountRefreshTrigger}
                   accounts={strategyAccounts}
                   onAccountChange={handleStrategyAccountChange}
                   accountsLoading={props.loadingAccounts}
                 />
               </div>
-            )}
+            </div>
           </div>
         </div>
-      </div>
       </div>
     </div>
   )

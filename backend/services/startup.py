@@ -78,6 +78,29 @@ def initialize_services():
         except Exception as e:
             logger.error(f"Failed to schedule position sync task: {e}", exc_info=True)
 
+        # Broker data sync task: Sync all broker data (balance, positions, orders) from Binance to database
+        # Frontend reads from database cache instead of calling Binance API directly
+        # This significantly improves frontend performance
+        from services.scheduler import sync_broker_data_task
+
+        BROKER_DATA_SYNC_JOB_ID = "broker_data_sync"
+        BROKER_DATA_SYNC_INTERVAL = 30  # 30 seconds - frequent enough for real-time feel, not too frequent to avoid rate limits
+
+        try:
+            # Remove existing job if it exists
+            if task_scheduler.scheduler and task_scheduler.scheduler.get_job(BROKER_DATA_SYNC_JOB_ID):
+                task_scheduler.remove_task(BROKER_DATA_SYNC_JOB_ID)
+
+            # Add broker data sync task
+            task_scheduler.add_interval_task(
+                task_func=sync_broker_data_task,
+                interval_seconds=BROKER_DATA_SYNC_INTERVAL,
+                task_id=BROKER_DATA_SYNC_JOB_ID
+            )
+            logger.info(f"Broker data sync task scheduled: every {BROKER_DATA_SYNC_INTERVAL} seconds")
+        except Exception as e:
+            logger.error(f"Failed to schedule broker data sync task: {e}", exc_info=True)
+
         logger.info("All services initialized successfully")
 
     except Exception as e:

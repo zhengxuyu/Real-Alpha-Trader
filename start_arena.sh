@@ -5,21 +5,65 @@
 if [ "$1" = "stop" ]; then
     echo "=== Stopping Alpha Arena ==="
 
-    # Only kill by port 8802 (most precise)
+    # Kill processes using port 8802 (most precise)
     if command -v lsof &> /dev/null; then
-        PID=$(lsof -t -i:8802 2>/dev/null)
-        if [ ! -z "$PID" ]; then
-            kill $PID
-            echo "Service stopped successfully (PID: $PID)"
+        PIDS=$(lsof -t -i:8802 2>/dev/null)
+        if [ ! -z "$PIDS" ]; then
+            # Kill all processes using the port and their parent/child processes
+            for PID in $PIDS; do
+                echo "Stopping process $PID..."
+                # Try graceful kill first (including parent process if it's uv)
+                kill $PID 2>/dev/null
+                # Also try to kill parent process if it's uv run python
+                PARENT_PID=$(ps -o ppid= -p $PID 2>/dev/null | xargs)
+                if [ ! -z "$PARENT_PID" ]; then
+                    PARENT_CMD=$(ps -p $PARENT_PID -o cmd= 2>/dev/null)
+                    if echo "$PARENT_CMD" | grep -q "uv run python\|uvicorn"; then
+                        echo "Stopping parent process $PARENT_PID..."
+                        kill $PARENT_PID 2>/dev/null
+                    fi
+                fi
+                sleep 1
+                # If still running, force kill
+                if ps -p $PID > /dev/null 2>&1; then
+                    echo "Force killing process $PID..."
+                    kill -9 $PID 2>/dev/null
+                fi
+                if [ ! -z "$PARENT_PID" ] && ps -p $PARENT_PID > /dev/null 2>&1; then
+                    echo "Force killing parent process $PARENT_PID..."
+                    kill -9 $PARENT_PID 2>/dev/null
+                fi
+            done
+            echo "Service stopped successfully (PIDs: $PIDS)"
             # Clean up PID file if exists
             [ -f "arena.pid" ] && rm arena.pid
+            # Wait a moment for port to be released
+            sleep 2
         else
             echo "No service running on port 8802"
             # Clean up stale PID file
             [ -f "arena.pid" ] && rm arena.pid
         fi
     else
-        echo "lsof not available, cannot stop service"
+        # Fallback: try to kill by PID file
+        if [ -f "arena.pid" ]; then
+            PID=$(cat arena.pid 2>/dev/null)
+            if [ ! -z "$PID" ] && ps -p $PID > /dev/null 2>&1; then
+                echo "Stopping process from PID file: $PID"
+                kill $PID 2>/dev/null
+                sleep 1
+                if ps -p $PID > /dev/null 2>&1; then
+                    kill -9 $PID 2>/dev/null
+                fi
+                echo "Service stopped successfully (PID: $PID)"
+                rm arena.pid
+            else
+                echo "No running process found for PID in arena.pid"
+                rm arena.pid
+            fi
+        else
+            echo "lsof not available and no PID file found, cannot stop service"
+        fi
     fi
 
 

@@ -12,8 +12,8 @@ from typing import Dict, List, Optional, Tuple
 from database.connection import SessionLocal
 from database.models import Account, AccountStrategyConfig, AIDecisionLog, Order, Position, Trade
 from fastapi import APIRouter, Depends, Query
-from services.asset_calculator import calc_positions_value
 from services.broker_adapter import get_balance_and_positions
+from services.binance_sync import get_binance_trade_history
 from services.market_data import get_last_price
 from services.price_cache import cache_price, get_cached_price
 from sqlalchemy import desc
@@ -393,81 +393,80 @@ def get_completed_trades(
     db: Session = Depends(get_db),
 ):
     """Return recent trades across all AI accounts.
-    Trades are stored in metadata database (completed trades are logged).
+    Trades are fetched dynamically from Binance API (real-time sync, not stored in database).
     """
     # Get account metadata from metadata database
+    # Note: is_active is stored as string "true" or "false"
     if account_id:
         accounts = db.query(Account).filter(Account.id == account_id, Account.is_active == "true").all()
     else:
         accounts = db.query(Account).filter(Account.is_active == "true").all()
 
+    logger.info(f"[get_completed_trades] Found {len(accounts)} active accounts (account_id filter: {account_id})")
+    
     if not accounts:
+        logger.warning(f"[get_completed_trades] No active accounts found")
         return {
             "generated_at": datetime.utcnow().isoformat(),
             "accounts": [],
             "trades": [],
         }
 
-    account_ids = [acc.id for acc in accounts]
     all_trades: List[dict] = []
     accounts_meta = {}
 
-    # Query trades from metadata database
-    query = (
-        db.query(Trade)
-        .filter(Trade.account_id.in_(account_ids))
-        .order_by(desc(Trade.trade_time))
-        .limit(limit * 2)  # Get more, will limit later
-    )
-
-    trade_rows = query.all()
-
-    for trade in trade_rows:
-        # Get account info from metadata DB
-        account = next((acc for acc in accounts if acc.id == trade.account_id), None)
-        if not account:
+    # Fetch trades from Binance for each account
+    for account in accounts:
+        try:
+            # Get trade history from Binance
+            binance_trades = get_binance_trade_history(account, symbol=None, limit=limit)
+            
+            logger.info(f"[get_completed_trades] Fetched {len(binance_trades)} trades from Binance for account {account.name}")
+            
+            for trade_data in binance_trades:
+                quantity = trade_data.get("quantity", 0)
+                price = trade_data.get("price", 0)
+                notional = price * quantity
+                
+                trade_time = trade_data.get("trade_time")
+                trade_time_str = trade_time.isoformat() if trade_time else None
+                
+                all_trades.append({
+                    "trade_id": trade_data.get("trade_id", 0),  # Binance trade ID
+                    "order_id": trade_data.get("order_id"),  # Binance order ID
+                    "order_no": str(trade_data.get("order_id", "")),  # Use order_id as order_no
+                    "account_id": account.id,
+                    "account_name": account.name,
+                    "model": account.model,
+                    "side": trade_data.get("side", "BUY"),
+                    "direction": "LONG" if (trade_data.get("side", "") or "").upper() == "BUY" else "SHORT",
+                    "symbol": trade_data.get("symbol", ""),
+                    "market": "CRYPTO",
+                    "price": price,
+                    "quantity": quantity,
+                    "notional": notional,
+                    "commission": trade_data.get("commission", 0),
+                    "trade_time": trade_time_str,
+                })
+                
+                if account.id not in accounts_meta:
+                    accounts_meta[account.id] = {
+                        "account_id": account.id,
+                        "name": account.name,
+                        "model": account.model,
+                    }
+                    
+        except Exception as e:
+            logger.error(f"[get_completed_trades] Failed to fetch trades from Binance for account {account.name}: {e}", exc_info=True)
             continue
-
-        quantity = float(trade.quantity)
-        price = float(trade.price)
-        notional = price * quantity
-
-        order_no = None
-        if trade.order_id:
-            order = db.query(Order).filter(Order.id == trade.order_id).first()
-            if order:
-                order_no = order.order_no
-
-        all_trades.append(
-            {
-                "trade_id": trade.id,
-                "order_id": trade.order_id,
-                "order_no": order_no,
-                "account_id": account.id,
-                "account_name": account.name,
-                "model": account.model,
-                "side": trade.side,
-                "direction": "LONG" if (trade.side or "").upper() == "BUY" else "SHORT",
-                "symbol": trade.symbol,
-                "market": trade.market,
-                "price": price,
-                "quantity": quantity,
-                "notional": notional,
-                "commission": float(trade.commission or 0),
-                "trade_time": trade.trade_time.isoformat() if trade.trade_time else None,
-            }
-        )
-
-        if account.id not in accounts_meta:
-            accounts_meta[account.id] = {
-                "account_id": account.id,
-                "name": account.name,
-                "model": account.model,
-            }
 
     # Sort all trades by time and limit
     all_trades.sort(key=lambda x: x["trade_time"] if x["trade_time"] else "", reverse=True)
     trades = all_trades[:limit]
+    
+    logger.info(
+        f"[get_completed_trades] Fetched {len(all_trades)} total trades from Binance, returning {len(trades)} (limit: {limit})"
+    )
 
     return {
         "generated_at": datetime.utcnow().isoformat(),
@@ -598,7 +597,7 @@ def get_positions_snapshot(
     db: Session = Depends(get_db),
 ):
     """Return consolidated positions and cash for active AI accounts.
-    Positions and cash are fetched from Binance in real-time.
+    Positions and cash are read from database cache (synced by background task).
     """
     # Get account metadata from metadata database
     accounts_query = db.query(Account).filter(
@@ -614,35 +613,29 @@ def get_positions_snapshot(
     snapshots: List[dict] = []
 
     for account in accounts:
-        # Get positions from Binance in real-time
-        try:
-            balance, positions_data = get_balance_and_positions(account)
-            current_cash = float(balance) if balance is not None else 0.0
-        except Exception as e:
-            logger.debug(f"Failed to fetch Binance data for account {account.id}: {e}")
-            current_cash = 0.0
-            positions_data = []
+        # Get balance from cache (updated by broker_data_sync task)
+        from services.broker_data_sync import AccountBalanceCache
+        balance = AccountBalanceCache.get_balance(account.id)
+        current_cash = float(balance) if balance is not None else 0.0
 
-        position_items: List[dict] = []
-        total_unrealized = 0.0
-
-        # Get avg_cost from database for each position
-        # Binance API doesn't provide avg_cost, so we need to get it from our database
+        # Get positions from database (synced by broker_data_sync task)
         db_positions = db.query(Position).filter(
             Position.account_id == account.id,
             Position.market == "CRYPTO"
         ).all()
-        
-        # Create a map of symbol -> avg_cost from database
-        db_avg_cost_map = {pos.symbol: float(pos.avg_cost) for pos in db_positions if float(pos.avg_cost) > 0}
-        
-        for pos in positions_data:
-            quantity = float(pos["quantity"])
-            # Use database avg_cost if available, otherwise fallback to Binance value (usually 0)
-            avg_cost = db_avg_cost_map.get(pos["symbol"], float(pos.get("avg_cost", 0)))
+
+        position_items: List[dict] = []
+        total_unrealized = 0.0
+
+        for pos in db_positions:
+            quantity = float(pos.quantity)
+            if quantity <= 0:
+                continue
+                
+            avg_cost = float(pos.avg_cost)
             base_notional = quantity * avg_cost
 
-            last_price = _get_latest_price(pos["symbol"], "CRYPTO")
+            last_price = _get_latest_price(pos.symbol, "CRYPTO")
             if last_price is None:
                 last_price = avg_cost
 
@@ -652,9 +645,9 @@ def get_positions_snapshot(
 
             position_items.append(
                 {
-                    "id": pos.get("id", 0),
-                    "symbol": pos["symbol"],
-                    "name": pos["symbol"],  # Use symbol as name
+                    "id": pos.id,
+                    "symbol": pos.symbol,
+                    "name": pos.name,
                     "market": "CRYPTO",
                     "side": "LONG" if quantity >= 0 else "SHORT",
                     "quantity": quantity,

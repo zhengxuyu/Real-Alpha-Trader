@@ -6,9 +6,9 @@ from database.models import (
     US_LOT_SIZE,
     US_MIN_COMMISSION,
     US_MIN_ORDER_QUANTITY,
+    Account,
     Order,
     Position,
-    Trade,
     User,
 )
 from sqlalchemy.orm import Session
@@ -37,6 +37,15 @@ def place_and_execute(
     if market != "US":
         raise ValueError("Only US market is supported")
 
+    # Get user's active account (required for Order, Trade, Position models)
+    account = (
+        db.query(Account)
+        .filter(Account.user_id == user.id, Account.is_active == "true")
+        .first()
+    )
+    if not account:
+        raise ValueError("Active trading account not found for user")
+
     # Adjust quantity to lot size
     if quantity % US_LOT_SIZE != 0:
         raise ValueError(f"quantity must be a multiple of lot_size={US_LOT_SIZE}")
@@ -47,7 +56,7 @@ def place_and_execute(
 
     order = Order(
         version="v1",
-        user_id=user.id,
+        account_id=account.id,  # Fixed: use account_id instead of user_id
         order_no=uuid.uuid4().hex[:16],
         symbol=symbol,
         name=name,
@@ -74,13 +83,13 @@ def place_and_execute(
         # position update (avg cost)
         pos = (
             db.query(Position)
-            .filter(Position.user_id == user.id, Position.symbol == symbol, Position.market == market)
+            .filter(Position.account_id == account.id, Position.symbol == symbol, Position.market == market)
             .first()
         )
         if not pos:
             pos = Position(
                 version="v1",
-                user_id=user.id,
+                account_id=account.id,  # Fixed: use account_id instead of user_id
                 symbol=symbol,
                 name=name,
                 market=market,
@@ -98,7 +107,7 @@ def place_and_execute(
     else:  # SELL
         pos = (
             db.query(Position)
-            .filter(Position.user_id == user.id, Position.symbol == symbol, Position.market == market)
+            .filter(Position.account_id == account.id, Position.symbol == symbol, Position.market == market)
             .first()
         )
         if not pos or int(pos.available_quantity) < quantity:
@@ -109,18 +118,9 @@ def place_and_execute(
         cash_gain = notional - commission
         user.current_cash = float(Decimal(str(user.current_cash)) + cash_gain)
 
-    trade = Trade(
-        order_id=order.id,
-        user_id=user.id,
-        symbol=symbol,
-        name=name,
-        market=market,
-        side=side,
-        price=float(exec_price),
-        quantity=quantity,
-        commission=float(commission),
-    )
-    db.add(trade)
+    # Note: Trade records are now fetched dynamically from Binance API,
+    # not stored in database (similar to positions). This ensures data consistency
+    # and avoids duplicate storage.
 
     order.filled_quantity = quantity
     order.status = "FILLED"

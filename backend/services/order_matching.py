@@ -409,19 +409,9 @@ def _execute_order(db: Session, order: Order, account: Account, execution_price:
             # Cash will be reflected when balance is fetched from Binance
             cash_gain = notional - commission
 
-        # Create trade record
-        trade = Trade(
-            order_id=order.id,
-            account_id=account.id,
-            symbol=order.symbol,
-            name=order.name,
-            market=order.market,
-            side=order.side,
-            price=float(execution_price),
-            quantity=float(quantity),
-            commission=float(commission),
-        )
-        db.add(trade)
+        # Note: Trade records are now fetched dynamically from Binance API,
+        # not stored in database (similar to positions). This ensures data consistency
+        # and avoids duplicate storage.
 
         # Release frozen (BUY)
         _release_frozen_on_fill(account, order, execution_price, commission)

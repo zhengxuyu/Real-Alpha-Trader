@@ -5,6 +5,7 @@ Record account asset snapshots on price updates.
 from __future__ import annotations
 
 import logging
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
@@ -12,6 +13,7 @@ from typing import Any, Dict, List
 # Dynamic import to avoid circular dependency with api.ws
 # Note: api.ws imports scheduler, scheduler may import services that import asset_snapshot_service
 from database.connection import SessionLocal
+from sqlalchemy.exc import OperationalError
 from database.models import Account, AccountAssetSnapshot
 from services.asset_curve_calculator import invalidate_asset_curve_cache
 from services.broker_adapter import get_balance_and_positions
@@ -124,9 +126,9 @@ def handle_price_update(event: Dict[str, Any]) -> None:
                     account_err,
                 )
 
+        # Save snapshots with retry logic to handle database locks
         if snapshots:
-            session.bulk_save_objects(snapshots)
-            session.commit()
+            _save_snapshots_with_retry(session, snapshots)
             invalidate_asset_curve_cache()
 
         # Use dynamic import to avoid circular dependency with api.ws
@@ -153,7 +155,8 @@ def handle_price_update(event: Dict[str, Any]) -> None:
             # If api.ws is not available, skip broadcast
             pass
 
-        _purge_old_snapshots(session, cutoff_hours=SNAPSHOT_RETENTION_HOURS)
+        # Purge old snapshots with retry logic
+        _purge_old_snapshots_with_retry(session, cutoff_hours=SNAPSHOT_RETENTION_HOURS)
     except Exception as err:
         session.rollback()
         logger.error("Failed to record asset snapshots: %s", err)
@@ -161,14 +164,63 @@ def handle_price_update(event: Dict[str, Any]) -> None:
         session.close()
 
 
-def _purge_old_snapshots(session: Session, cutoff_hours: int) -> None:
-    """Remove snapshots older than retention window to control storage."""
+def _save_snapshots_with_retry(session: Session, snapshots: List[AccountAssetSnapshot], max_retries: int = 3) -> bool:
+    """Save snapshots with retry logic to handle database locks."""
+    for attempt in range(max_retries):
+        try:
+            session.bulk_save_objects(snapshots)
+            session.commit()
+            return True
+        except OperationalError as e:
+            if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 0.1  # Exponential backoff: 0.1s, 0.2s, 0.3s
+                logger.debug(
+                    "Database locked when saving snapshots, retrying in %.2fs (attempt %d/%d)",
+                    wait_time,
+                    attempt + 1,
+                    max_retries,
+                )
+                session.rollback()
+                time.sleep(wait_time)
+            else:
+                raise
+        except Exception as e:
+            session.rollback()
+            raise
+    return False
+
+
+def _purge_old_snapshots_with_retry(session: Session, cutoff_hours: int, max_retries: int = 3) -> None:
+    """Remove snapshots older than retention window with retry logic."""
     cutoff_time = datetime.now(tz=timezone.utc) - timedelta(hours=cutoff_hours)
-    deleted = (
-        session.query(AccountAssetSnapshot)
-        .filter(AccountAssetSnapshot.event_time < cutoff_time)
-        .delete(synchronize_session=False)
-    )
-    if deleted:
-        session.commit()
-        logger.debug("Purged %d old asset snapshots", deleted)
+    
+    for attempt in range(max_retries):
+        try:
+            deleted = (
+                session.query(AccountAssetSnapshot)
+                .filter(AccountAssetSnapshot.event_time < cutoff_time)
+                .delete(synchronize_session=False)
+            )
+            if deleted:
+                session.commit()
+                logger.debug("Purged %d old asset snapshots", deleted)
+            return
+        except OperationalError as e:
+            if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 0.1
+                logger.debug(
+                    "Database locked when purging snapshots, retrying in %.2fs (attempt %d/%d)",
+                    wait_time,
+                    attempt + 1,
+                    max_retries,
+                )
+                session.rollback()
+                time.sleep(wait_time)
+            else:
+                logger.warning("Failed to purge old snapshots after %d attempts: %s", max_retries, e)
+                session.rollback()
+                return
+        except Exception as e:
+            logger.warning("Error purging old snapshots: %s", e)
+            session.rollback()
+            return

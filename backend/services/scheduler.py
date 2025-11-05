@@ -274,6 +274,21 @@ def sync_positions_task():
         logger.error(f"Position sync task failed: {e}", exc_info=True)
 
 
+def sync_broker_data_task():
+    """
+    Scheduled task to sync all broker data (balance, positions, orders, trades) from Binance to database.
+    Frontend reads from database cache instead of calling Binance API directly.
+    Should run every 30-60 seconds to keep data fresh.
+    """
+    try:
+        from services.broker_data_sync import sync_all_accounts_broker_data
+
+        stats = sync_all_accounts_broker_data()
+        logger.debug(f"Broker data sync task completed: {stats}")
+    except Exception as e:
+        logger.error(f"Broker data sync task failed: {e}", exc_info=True)
+
+
 # Convenience functions
 def start_scheduler():
     """Start global scheduler"""

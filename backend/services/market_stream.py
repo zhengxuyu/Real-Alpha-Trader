@@ -15,6 +15,7 @@ from database.models import CryptoPriceTick
 from services.hyperliquid_market_data import hyperliquid_client
 from services.market_events import publish_price_update
 from services.price_cache import record_price_update
+from sqlalchemy.exc import OperationalError
 
 logger = logging.getLogger(__name__)
 
@@ -101,37 +102,65 @@ class MarketDataStream:
         )
 
     def _persist_tick(self, symbol: str, price: float, event_time: datetime) -> None:
-        """Persist tick data and prune old entries beyond retention window."""
-        session = SessionLocal()
-        try:
-            tick = CryptoPriceTick(
-                symbol=symbol,
-                market=self.market,
-                price=price,
-                event_time=event_time,
-            )
-            session.add(tick)
-            session.commit()
-
-            cutoff = event_time.timestamp() - self.retention_seconds
-            cutoff_dt = datetime.fromtimestamp(cutoff, tz=timezone.utc)
-
-            deleted = (
-                session.query(CryptoPriceTick)
-                .filter(
-                    CryptoPriceTick.symbol == symbol,
-                    CryptoPriceTick.event_time < cutoff_dt,
+        """Persist tick data and prune old entries beyond retention window with retry logic."""
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            session = SessionLocal()
+            try:
+                tick = CryptoPriceTick(
+                    symbol=symbol,
+                    market=self.market,
+                    price=price,
+                    event_time=event_time,
                 )
-                .delete(synchronize_session=False)
-            )
-            if deleted:
+                session.add(tick)
                 session.commit()
-                logger.debug("Purged %d old ticks for %s", deleted, symbol)
-        except Exception as err:
-            session.rollback()
-            logger.error("Failed to persist tick for %s: %s", symbol, err)
-        finally:
-            session.close()
+
+                cutoff = event_time.timestamp() - self.retention_seconds
+                cutoff_dt = datetime.fromtimestamp(cutoff, tz=timezone.utc)
+
+                deleted = (
+                    session.query(CryptoPriceTick)
+                    .filter(
+                        CryptoPriceTick.symbol == symbol,
+                        CryptoPriceTick.event_time < cutoff_dt,
+                    )
+                    .delete(synchronize_session=False)
+                )
+                if deleted:
+                    session.commit()
+                    logger.debug("Purged %d old ticks for %s", deleted, symbol)
+                
+                # Success - break out of retry loop
+                return
+                
+            except OperationalError as e:
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 0.1  # Exponential backoff: 0.1s, 0.2s, 0.3s
+                    logger.debug(
+                        "Database locked when persisting tick for %s, retrying in %.2fs (attempt %d/%d)",
+                        symbol,
+                        wait_time,
+                        attempt + 1,
+                        max_retries,
+                    )
+                    session.rollback()
+                    session.close()
+                    time.sleep(wait_time)
+                    continue  # Retry
+                else:
+                    # Last attempt or non-lock error
+                    session.rollback()
+                    logger.error("Failed to persist tick for %s: %s", symbol, e)
+                    return
+            except Exception as err:
+                session.rollback()
+                logger.error("Failed to persist tick for %s: %s", symbol, err)
+                return
+            finally:
+                if session:
+                    session.close()
 
 
 # Global stream holder (initialized in startup)

@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 from database.models import Account
 
@@ -408,6 +408,206 @@ def get_binance_open_orders(account: Account) -> List[Dict]:
         return []
     except Exception as e:
         logger.error(f"Failed to get open orders from Binance for account {account.name}: {e}", exc_info=True)
+        return []
+
+
+def calculate_avg_cost_from_trades(account: Account, symbol: str) -> Optional[float]:
+    """
+    Calculate average cost from Binance trade history for a specific symbol.
+    Uses FIFO (First In First Out) method: starts from current position, traces back through trades
+    to find which BUY trades contribute to the current position.
+    
+    Args:
+        account: Account to calculate avg_cost for
+        symbol: Symbol to calculate avg_cost for (e.g., "BTC", "XRP")
+        
+    Returns:
+        Average cost as float, or None if cannot be calculated
+    """
+    if not account.binance_api_key or not account.binance_secret_key:
+        logger.debug(f"Account {account.name} does not have Binance API keys configured")
+        return None
+    
+    try:
+        # First, get current actual position from Binance
+        _, positions_data = get_binance_balance_and_positions(account)
+        current_position_qty = Decimal("0")
+        for pos in positions_data:
+            if (pos.get("symbol") or "").upper() == symbol.upper():
+                current_position_qty = Decimal(str(pos.get("quantity", 0)))
+                break
+        
+        if current_position_qty <= 0:
+            logger.debug(f"Account {account.name} has no active position for {symbol} on Binance")
+            return None
+        
+        trading_pair = map_symbol_to_binance_pair(symbol)
+        _apply_rate_limiting()
+        
+        # Get trade history from Binance (sorted by time, oldest first)
+        trades_data = _make_signed_request(
+            api_key=account.binance_api_key,
+            secret_key=account.binance_secret_key,
+            endpoint="/api/v3/myTrades",
+            params={"symbol": trading_pair, "limit": 1000},  # Get recent 1000 trades
+        )
+        
+        if not trades_data or len(trades_data) == 0:
+            logger.debug(f"Account {account.name} has no trade history for {symbol}")
+            return None
+        
+        # Reverse trades to process from most recent to oldest
+        # We'll trace back from current position to find which BUY trades contribute
+        trades_reversed = list(reversed(trades_data))
+        
+        # Track remaining position to account for (FIFO: sell oldest first)
+        remaining_qty = current_position_qty
+        contributing_buys = []  # BUY trades that contribute to current position
+        
+        # Process from most recent to oldest
+        for trade_info in trades_reversed:
+            is_buyer = trade_info.get("isBuyer", True)
+            qty = Decimal(str(trade_info.get("qty", "0")))
+            price = Decimal(str(trade_info.get("price", "0")))
+            
+            if is_buyer:
+                # BUY trade: if we still need to account for position, this BUY contributes
+                if remaining_qty > 0:
+                    # This BUY contributes to current position
+                    # Amount contributed is min(remaining_qty, qty)
+                    contributed_qty = min(remaining_qty, qty)
+                    contributing_buys.append({
+                        "price": price,
+                        "qty": contributed_qty,
+                    })
+                    remaining_qty -= contributed_qty
+                    
+                    if remaining_qty <= 0:
+                        # We've accounted for all current position
+                        break
+            else:
+                # SELL trade: when going backwards, SELL increases what we need to account for
+                # (because we're reversing the sell)
+                remaining_qty += qty
+        
+        if not contributing_buys:
+            logger.debug(f"Account {account.name} could not trace current position {symbol} back to BUY trades")
+            return None
+        
+        # Calculate weighted average cost from contributing BUY trades
+        total_cost = Decimal("0")
+        total_qty = Decimal("0")
+        
+        for buy in contributing_buys:
+            total_cost += buy["price"] * buy["qty"]
+            total_qty += buy["qty"]
+        
+        if total_qty > 0:
+            avg_cost = float(total_cost / total_qty)
+            logger.info(
+                f"Calculated avg_cost for {account.name} {symbol} using FIFO: "
+                f"${avg_cost:.6f} (from {len(contributing_buys)} BUY trades, "
+                f"total qty: {float(total_qty):.8f}, current position: {float(current_position_qty):.8f})"
+            )
+            return avg_cost
+        else:
+            logger.debug(f"Account {account.name} has no valid BUY trades contributing to {symbol} position")
+            return None
+            
+    except Exception as e:
+        logger.warning(f"Failed to calculate avg_cost from trades for {account.name} {symbol}: {e}", exc_info=True)
+        return None
+
+
+def get_binance_trade_history(account: Account, symbol: Optional[str] = None, limit: int = 1000) -> List[Dict]:
+    """
+    Get trade history from Binance for all symbols or a specific symbol.
+    Returns list of trade dictionaries with trade details.
+    
+    Args:
+        account: Account to get trades for
+        symbol: Optional symbol to filter (e.g., "BTC", "XRP"). If None, gets all trades.
+        limit: Maximum number of trades to return per symbol
+        
+    Returns:
+        List of trade dictionaries with keys: symbol, side, price, quantity, commission, trade_time, etc.
+    """
+    if not account.binance_api_key or not account.binance_secret_key:
+        logger.debug(f"Account {account.name} does not have Binance API keys configured")
+        return []
+    
+    all_trades = []
+    
+    # Supported symbols for trading
+    symbols_to_check = [symbol] if symbol else ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE"]
+    
+    # For multiple symbols, reduce limit per symbol to avoid too many API calls
+    # If querying all symbols, get fewer trades per symbol to stay within overall limit
+    per_symbol_limit = limit if symbol else min(limit // len(symbols_to_check), 100)
+    if per_symbol_limit < 1:
+        per_symbol_limit = 1
+    
+    try:
+        for sym in symbols_to_check:
+            try:
+                trading_pair = map_symbol_to_binance_pair(sym)
+                _apply_rate_limiting()
+                
+                # Get trade history from Binance
+                trades_data = _make_signed_request(
+                    api_key=account.binance_api_key,
+                    secret_key=account.binance_secret_key,
+                    endpoint="/api/v3/myTrades",
+                    params={"symbol": trading_pair, "limit": per_symbol_limit},
+                )
+                
+                if not trades_data:
+                    continue
+                
+                # Convert Binance trade format to our format
+                for trade_info in trades_data:
+                    is_buyer = trade_info.get("isBuyer", True)
+                    side = "BUY" if is_buyer else "SELL"
+                    
+                    # Parse trade time
+                    trade_time_ms = trade_info.get("time", 0)
+                    trade_time = datetime.fromtimestamp(trade_time_ms / 1000.0, tz=timezone.utc) if trade_time_ms else None
+                    
+                    # Get commission (usually in quote currency or base currency)
+                    commission_asset = trade_info.get("commissionAsset", "")
+                    commission_amount = float(trade_info.get("commission", 0))
+                    
+                    # Convert commission to USDT if needed (simplified - assumes commission is in USDT or base asset)
+                    commission = commission_amount
+                    if commission_asset != "USDT" and commission_asset:
+                        # If commission is in base asset, estimate value (rough approximation)
+                        price = float(trade_info.get("price", 0))
+                        if commission_asset == sym:
+                            commission = commission_amount * price
+                    
+                    all_trades.append({
+                        "symbol": sym,
+                        "side": side,
+                        "price": float(trade_info.get("price", 0)),
+                        "quantity": float(trade_info.get("qty", 0)),
+                        "commission": commission,
+                        "trade_time": trade_time,
+                        "order_id": trade_info.get("orderId"),
+                        "trade_id": trade_info.get("id"),
+                    })
+                
+            except Exception as sym_err:
+                logger.debug(f"Failed to get trades for {sym} from Binance: {sym_err}")
+                continue
+        
+        # Sort by trade_time descending (most recent first)
+        min_datetime = datetime.min.replace(tzinfo=timezone.utc)
+        all_trades.sort(key=lambda x: x.get("trade_time") or min_datetime, reverse=True)
+        # Limit total trades (not per symbol, but overall)
+        return all_trades[:limit]
+        
+    except Exception as e:
+        logger.error(f"Failed to get trade history from Binance for account {account.name}: {e}", exc_info=True)
         return []
 
 

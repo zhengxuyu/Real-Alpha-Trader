@@ -19,6 +19,7 @@ from services.ai_decision_service import (
 from services.asset_calculator import calc_positions_value
 from services.market_data import get_last_price
 from services.broker_adapter import execute_order, get_balance_and_positions
+from services.binance_sync import calculate_avg_cost_from_trades
 from services.order_matching import check_and_execute_order, create_order
 from sqlalchemy.orm import Session
 
@@ -509,6 +510,93 @@ def place_ai_driven_crypto_order(max_ratio: float = 0.2, account_ids: Optional[I
 
                     # Verify trade execution (extracted method)
                     _verify_trade_execution(account, symbol, side, quantity, available_quantity, order_id)
+
+                    # Update Position avg_cost in database after successful trade
+                    try:
+                        position = (
+                            account_db.query(Position)
+                            .filter(
+                                Position.account_id == account.id,
+                                Position.symbol == symbol,
+                                Position.market == "CRYPTO"
+                            )
+                            .first()
+                        )
+                        
+                        if side == "BUY":
+                            # For BUY: calculate new weighted average cost
+                            if position:
+                                # Update existing position
+                                old_qty = Decimal(str(position.quantity))
+                                old_cost = Decimal(str(position.avg_cost))
+                                notional = Decimal(str(price)) * Decimal(str(quantity))
+                                new_qty = old_qty + Decimal(str(quantity))
+                                
+                                if old_qty > 0 and old_cost > 0:
+                                    # Weighted average: (old_cost * old_qty + new_cost * new_qty) / total_qty
+                                    new_avg_cost = (old_cost * old_qty + Decimal(str(price)) * Decimal(str(quantity))) / new_qty
+                                else:
+                                    # First buy or avg_cost was 0
+                                    new_avg_cost = Decimal(str(price))
+                                
+                                position.quantity = float(new_qty)
+                                position.available_quantity = float(Decimal(str(position.available_quantity)) + Decimal(str(quantity)))
+                                position.avg_cost = float(new_avg_cost)
+                                
+                                logger.info(
+                                    f"Updated Position avg_cost for {account.name} {symbol} after BUY: "
+                                    f"${float(old_cost):.6f} -> ${float(new_avg_cost):.6f}, "
+                                    f"qty: {float(old_qty):.8f} -> {float(new_qty):.8f}"
+                                )
+                            else:
+                                # Create new position
+                                position = Position(
+                                    version="v1",
+                                    account_id=account.id,
+                                    symbol=symbol,
+                                    name=symbol,
+                                    market="CRYPTO",
+                                    quantity=float(quantity),
+                                    available_quantity=float(quantity),
+                                    avg_cost=float(price),
+                                )
+                                account_db.add(position)
+                                logger.info(
+                                    f"Created new Position for {account.name} {symbol} after BUY: "
+                                    f"qty={quantity}, avg_cost=${price:.6f}"
+                                )
+                            
+                            account_db.commit()
+                        elif side == "SELL":
+                            # For SELL: avg_cost stays the same, only quantity changes
+                            if position:
+                                position.quantity = float(Decimal(str(position.quantity)) - Decimal(str(quantity)))
+                                position.available_quantity = float(Decimal(str(position.available_quantity)) - Decimal(str(quantity)))
+                                account_db.commit()
+                                logger.info(
+                                    f"Updated Position quantity for {account.name} {symbol} after SELL: "
+                                    f"qty={float(position.quantity):.8f}, avg_cost unchanged=${float(position.avg_cost):.6f}"
+                                )
+                    except Exception as pos_err:
+                        # Don't fail the trade if position update fails, but log it
+                        logger.warning(
+                            f"Failed to update Position avg_cost for {account.name} {symbol} after {side}: {pos_err}",
+                            exc_info=True
+                        )
+                        account_db.rollback()
+                        # Try to recalculate avg_cost from trade history as fallback
+                        try:
+                            avg_cost = calculate_avg_cost_from_trades(account, symbol)
+                            if avg_cost and position:
+                                position.avg_cost = avg_cost
+                                account_db.commit()
+                                logger.info(f"Recalculated avg_cost for {account.name} {symbol} from trade history: ${avg_cost:.6f}")
+                        except Exception as recalc_err:
+                            logger.debug(f"Failed to recalculate avg_cost for {account.name} {symbol}: {recalc_err}")
+
+                    # Note: Trade records are now fetched dynamically from Binance API,
+                    # not stored in database (similar to positions). This ensures data consistency
+                    # and avoids duplicate storage.
 
                     # Save successful decision
                     save_ai_decision(account_db, account, decision, portfolio, executed=True)

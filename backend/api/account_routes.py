@@ -277,21 +277,33 @@ async def get_account_overview(db: Session = Depends(get_db)):
         logger.debug(f"[PAGE_LOAD] Found account {account.id} ({account.name}) in metadata DB")
         logger.info(f"[PAGE_LOAD] Found account {account.id} ({account.name}) in metadata DB")
 
-        # Get balance and positions from Binance in real-time (single API call)
-        balance, positions = get_balance_and_positions(account)
+        # Get balance from cache (updated by broker_data_sync task)
+        from services.broker_data_sync import AccountBalanceCache
+        balance = AccountBalanceCache.get_balance(account.id)
         current_cash = float(balance) if balance is not None else 0.0
+
+        # Get positions from database (synced by broker_data_sync task)
+        from database.models import Position, Order
+        db_positions = db.query(Position).filter(
+            Position.account_id == account.id,
+            Position.market == "CRYPTO"
+        ).all()
         positions_list = [
             {
-                "symbol": pos["symbol"],
-                "quantity": float(pos["quantity"]),
-                "avg_cost": float(pos.get("avg_cost", 0)),
+                "symbol": pos.symbol,
+                "quantity": float(pos.quantity),
+                "avg_cost": float(pos.avg_cost),
             }
-            for pos in positions
+            for pos in db_positions if float(pos.quantity) > 0
         ]
 
-        # Get open orders from Binance in real-time
-        open_orders = get_open_orders(account)
-        pending_orders = len(open_orders)
+        # Get open orders from database (synced by broker_data_sync task)
+        db_orders = db.query(Order).filter(
+            Order.account_id == account.id,
+            Order.market == "CRYPTO",
+            Order.status.in_(["PENDING", "PARTIALLY_FILLED", "NEW"])
+        ).all()
+        pending_orders = len(db_orders)
 
         # Calculate positions value (would need current prices for accurate calculation)
         positions_value = 0.0  # Would need to fetch current prices

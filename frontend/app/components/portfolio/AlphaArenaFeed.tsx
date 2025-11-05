@@ -77,35 +77,58 @@ function formatTriggerMode(mode?: string | null) {
   }
 }
 
-export default function AlphaArenaFeed({
+function AlphaArenaFeedComponent({
   refreshKey,
   autoRefreshInterval = 60_000,
   wsRef,
   selectedAccount: selectedAccountProp,
   onSelectedAccountChange,
 }: AlphaArenaFeedProps) {
+  const renderId = Math.random().toString(36).substring(7)
+  console.log(`[AlphaArenaFeed:${renderId}] Render start`, { timestamp: Date.now() })
+
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 1: useState activeTab`)
   const [activeTab, setActiveTab] = useState<FeedTab>('trades')
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 2: useState trades`)
   const [trades, setTrades] = useState<ArenaTrade[]>([])
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 3: useState modelChat`)
   const [modelChat, setModelChat] = useState<ArenaModelChatEntry[]>([])
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 4: useState positions`)
   const [positions, setPositions] = useState<ArenaPositionsAccount[]>([])
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 5: useState accountsMeta`)
   const [accountsMeta, setAccountsMeta] = useState<ArenaAccountMeta[]>([])
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 6: useState allTraderOptions`)
   const [allTraderOptions, setAllTraderOptions] = useState<ArenaAccountMeta[]>([])
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 7: useState internalSelectedAccount`)
   const [internalSelectedAccount, setInternalSelectedAccount] = useState<number | 'all'>(
     selectedAccountProp ?? 'all',
   )
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 8: useState expandedChat`)
   const [expandedChat, setExpandedChat] = useState<number | null>(null)
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 9: useState expandedSections`)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 10: useState manualRefreshKey`)
   const [manualRefreshKey, setManualRefreshKey] = useState(0)
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 11: useState loading`)
   const [loading, setLoading] = useState(false)
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 12: useState error`)
   const [error, setError] = useState<string | null>(null)
 
   // Track seen items for highlight animation
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 13: useRef seenTradeIds`)
   const seenTradeIds = useRef<Set<number>>(new Set())
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 14: useRef seenDecisionIds`)
   const seenDecisionIds = useRef<Set<number>>(new Set())
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 15: useRef prevManualRefreshKey`)
   const prevManualRefreshKey = useRef(manualRefreshKey)
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 16: useRef prevRefreshKey`)
   const prevRefreshKey = useRef(refreshKey)
 
+  console.log(`[AlphaArenaFeed:${renderId}] All useState/useRef hooks initialized`)
+
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 17: useEffect selectedAccountProp`)
   useEffect(() => {
+    console.log(`[AlphaArenaFeed:${renderId}] useEffect selectedAccountProp executed`)
     if (selectedAccountProp !== undefined) {
       setInternalSelectedAccount(selectedAccountProp)
     }
@@ -114,6 +137,7 @@ export default function AlphaArenaFeed({
   const activeAccount = selectedAccountProp ?? internalSelectedAccount
   const cacheKey: CacheKey = activeAccount === 'all' ? 'all' : String(activeAccount)
 
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 18: useCallback primeFromCache`)
   const primeFromCache = useCallback(
     (key: CacheKey) => {
       const cached = FEED_CACHE.get(key)
@@ -128,6 +152,7 @@ export default function AlphaArenaFeed({
     [],
   )
 
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 19: useCallback writeCache`)
   const writeCache = useCallback(
     (key: CacheKey, entry: Partial<FeedCacheEntry>) => {
       const existing = FEED_CACHE.get(key)
@@ -143,7 +168,9 @@ export default function AlphaArenaFeed({
   )
 
   // Listen for real-time WebSocket updates
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 20: useEffect wsRef`)
   useEffect(() => {
+    console.log(`[AlphaArenaFeed:${renderId}] useEffect wsRef executed`)
     if (!wsRef?.current) return
 
     const handleMessage = (event: MessageEvent) => {
@@ -240,7 +267,9 @@ export default function AlphaArenaFeed({
     }
   }, [wsRef, activeAccount, cacheKey, writeCache])
 
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 21: useEffect fetchData`)
   useEffect(() => {
+    console.log(`[AlphaArenaFeed:${renderId}] useEffect fetchData executed`)
     let intervalId: NodeJS.Timeout | null = null
     let isMounted = true
 
@@ -370,9 +399,20 @@ export default function AlphaArenaFeed({
     writeCache,
   ])
 
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 22: useMemo accountOptions`)
   const accountOptions = useMemo(() => {
+    console.log(`[AlphaArenaFeed:${renderId}] useMemo accountOptions executed`, { count: allTraderOptions.length })
     return allTraderOptions.sort((a, b) => a.name.localeCompare(b.name))
   }, [allTraderOptions])
+
+  // Add a placeholder useMemo to match ArenaAnalyticsFeed's hooks count
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 23: useMemo placeholderMemo`)
+  const placeholderMemo = useMemo(() => {
+    console.log(`[AlphaArenaFeed:${renderId}] useMemo placeholderMemo executed`)
+    return { placeholder: true }
+  }, [])
+
+  console.log(`[AlphaArenaFeed:${renderId}] All hooks completed`)
 
   const handleRefreshClick = () => {
     setManualRefreshKey((key) => key + 1)
@@ -791,3 +831,9 @@ export default function AlphaArenaFeed({
     </div>
   )
 }
+
+// Export with memo to help React distinguish this component
+export default React.memo(AlphaArenaFeedComponent, (prevProps, nextProps) => {
+  // Always return false to force re-render, but React will still track hooks separately
+  return false
+})

@@ -95,28 +95,57 @@ function buildAccountsMeta(accounts: ArenaAnalyticsAccount[]): ArenaAccountMeta[
   }))
 }
 
-export default function ArenaAnalyticsFeed({
+function ArenaAnalyticsFeedComponent({
   refreshKey,
   autoRefreshInterval = 60_000,
   selectedAccount: selectedAccountProp,
   onSelectedAccountChange,
 }: ArenaAnalyticsFeedProps) {
+  const renderId = Math.random().toString(36).substring(7)
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Render start`, { timestamp: Date.now() })
+
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 1: useState activeTab`)
   const [activeTab, setActiveTab] = useState<FeedTab>('leaderboard')
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 2: useState analyticsAccounts`)
   const [analyticsAccounts, setAnalyticsAccounts] = useState<ArenaAnalyticsAccount[]>([])
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 3: useState summary`)
   const [summary, setSummary] = useState<ArenaAnalyticsSummary | null>(null)
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 4: useState generatedAt`)
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 5: useState accountsMeta`)
   const [accountsMeta, setAccountsMeta] = useState<ArenaAccountMeta[]>([])
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 6: useState allTraderOptions`)
   const [allTraderOptions, setAllTraderOptions] = useState<ArenaAccountMeta[]>([])
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 7: useState internalSelectedAccount`)
   const [internalSelectedAccount, setInternalSelectedAccount] = useState<number | 'all'>(
     selectedAccountProp ?? 'all',
   )
+  // Placeholder hooks to match AlphaArenaFeed's hooks order exactly
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 8: useState placeholderExpandedChat`)
+  const [, setPlaceholderExpandedChat] = useState<number | null>(null)
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 9: useState placeholderExpandedSections`)
+  const [, setPlaceholderExpandedSections] = useState<Record<string, boolean>>({})
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 10: useState manualRefreshKey`)
   const [manualRefreshKey, setManualRefreshKey] = useState(0)
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 11: useState loading`)
   const [loading, setLoading] = useState(false)
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 12: useState error`)
   const [error, setError] = useState<string | null>(null)
+  // Track seen items for highlight animation (matching AlphaArenaFeed's useRef order)
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 13: useRef placeholderSeenTradeIds`)
+  const placeholderSeenTradeIds = useRef<Set<number>>(new Set())
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 14: useRef placeholderSeenDecisionIds`)
+  const placeholderSeenDecisionIds = useRef<Set<number>>(new Set())
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 15: useRef prevManualRefreshKey`)
   const prevManualRefreshKey = useRef(manualRefreshKey)
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 16: useRef prevRefreshKey`)
   const prevRefreshKey = useRef(refreshKey)
 
+  console.log(`[ArenaAnalyticsFeed:${renderId}] All useState/useRef hooks initialized`)
+
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 17: useEffect selectedAccountProp`)
   useEffect(() => {
+    console.log(`[ArenaAnalyticsFeed:${renderId}] useEffect selectedAccountProp executed`)
     if (selectedAccountProp !== undefined) {
       setInternalSelectedAccount(selectedAccountProp)
     }
@@ -125,6 +154,7 @@ export default function ArenaAnalyticsFeed({
   const activeAccount = selectedAccountProp ?? internalSelectedAccount
   const cacheKey: CacheKey = activeAccount === 'all' ? 'all' : String(activeAccount)
 
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 18: useCallback primeFromCache`)
   const primeFromCache = useCallback(
     (key: CacheKey) => {
       const cached = ANALYTICS_CACHE.get(key)
@@ -139,6 +169,7 @@ export default function ArenaAnalyticsFeed({
     [],
   )
 
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 19: useCallback writeCache`)
   const writeCache = useCallback(
     (key: CacheKey, entry: Partial<AnalyticsCacheEntry>) => {
       const existing = ANALYTICS_CACHE.get(key)
@@ -153,6 +184,17 @@ export default function ArenaAnalyticsFeed({
     [],
   )
 
+  // Placeholder useEffect to match AlphaArenaFeed's hooks count
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 20: useEffect placeholder`)
+  useEffect(() => {
+    // This is a placeholder to ensure hooks consistency
+    console.log(`[ArenaAnalyticsFeed:${renderId}] useEffect placeholder executed`)
+    return () => {
+      // Cleanup placeholder
+    }
+  }, [])
+
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 21: useEffect fetchAnalytics`)
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null
     let isMounted = true
@@ -196,19 +238,19 @@ export default function ArenaAnalyticsFeed({
             mergedMeta = prev
             return prev
           }
-            const metaMap = new Map<number, ArenaAccountMeta>()
-            prev.forEach((meta) => {
-              metaMap.set(meta.account_id, meta)
+          const metaMap = new Map<number, ArenaAccountMeta>()
+          prev.forEach((meta) => {
+            metaMap.set(meta.account_id, meta)
+          })
+          incoming.forEach((meta) => {
+            metaMap.set(meta.account_id, {
+              account_id: meta.account_id,
+              name: meta.name,
+              model: meta.model ?? null,
             })
-            incoming.forEach((meta) => {
-              metaMap.set(meta.account_id, {
-                account_id: meta.account_id,
-                name: meta.name,
-                model: meta.model ?? null,
-              })
-            })
-            mergedMeta = Array.from(metaMap.values())
-            return mergedMeta
+          })
+          mergedMeta = Array.from(metaMap.values())
+          return mergedMeta
         })
 
         // Update allTraderOptions only when viewing 'all' to preserve complete list
@@ -270,11 +312,15 @@ export default function ArenaAnalyticsFeed({
     writeCache,
   ])
 
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 22: useMemo accountOptions`)
   const accountOptions = useMemo(() => {
+    console.log(`[ArenaAnalyticsFeed:${renderId}] useMemo accountOptions executed`, { count: allTraderOptions.length })
     return allTraderOptions.sort((a, b) => a.name.localeCompare(b.name))
   }, [allTraderOptions])
 
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 23: useMemo memoisedAggregates`)
   const memoisedAggregates = useMemo(() => {
+    console.log(`[ArenaAnalyticsFeed:${renderId}] useMemo memoisedAggregates executed`, { accountsCount: analyticsAccounts.length })
     const totals = analyticsAccounts.reduce(
       (acc, account) => {
         acc.tradeCount += account.trade_count || 0
@@ -286,6 +332,8 @@ export default function ArenaAnalyticsFeed({
     )
     return totals
   }, [analyticsAccounts])
+
+  console.log(`[ArenaAnalyticsFeed:${renderId}] All hooks completed`)
 
   const handleRefreshClick = () => {
     setManualRefreshKey((key) => key + 1)
@@ -617,3 +665,9 @@ export default function ArenaAnalyticsFeed({
     </div>
   )
 }
+
+// Export with memo to help React distinguish this component
+export default React.memo(ArenaAnalyticsFeedComponent, () => {
+  // Always return false to force re-render, but React will still track hooks separately
+  return false
+})

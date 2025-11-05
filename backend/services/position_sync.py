@@ -10,6 +10,7 @@ from typing import Dict, List
 from database.connection import SessionLocal
 from database.models import Account, Position
 from services.broker_adapter import get_balance_and_positions
+from services.binance_sync import calculate_avg_cost_from_trades
 from services.trading_commands import POSITION_SYNC_THRESHOLD
 from sqlalchemy.orm import Session
 
@@ -77,6 +78,19 @@ def sync_account_positions_with_binance(account: Account, db: Session) -> Dict[s
                 else:
                     # Position is in sync
                     pass
+                
+                # Recalculate avg_cost from trade history if missing or zero
+                if float(db_pos.avg_cost) == 0 or db_pos.avg_cost is None:
+                    try:
+                        avg_cost = calculate_avg_cost_from_trades(account, symbol)
+                        if avg_cost and avg_cost > 0:
+                            db_pos.avg_cost = avg_cost
+                            logger.info(
+                                f"Recalculated avg_cost for {account.name} {symbol} from trade history: "
+                                f"${avg_cost:.6f}"
+                            )
+                    except Exception as calc_err:
+                        logger.debug(f"Failed to recalculate avg_cost for {account.name} {symbol}: {calc_err}")
 
                 # Remove from dict to track which positions we've processed
                 del binance_positions_dict[symbol]
@@ -88,6 +102,20 @@ def sync_account_positions_with_binance(account: Account, db: Session) -> Dict[s
 
         # Add new positions that exist on Binance but not in DB
         for symbol, binance_pos in binance_positions_dict.items():
+            # Calculate avg_cost from trade history if not available from Binance
+            avg_cost = binance_pos.get("avg_cost", 0)
+            if avg_cost == 0:
+                try:
+                    calculated_avg_cost = calculate_avg_cost_from_trades(account, symbol)
+                    if calculated_avg_cost and calculated_avg_cost > 0:
+                        avg_cost = calculated_avg_cost
+                        logger.info(
+                            f"Calculated avg_cost for new position {account.name} {symbol} from trade history: "
+                            f"${avg_cost:.6f}"
+                        )
+                except Exception as calc_err:
+                    logger.debug(f"Failed to calculate avg_cost for new position {account.name} {symbol}: {calc_err}")
+            
             # Find position name (use symbol as fallback)
             position = Position(
                 version="v1",
@@ -97,13 +125,13 @@ def sync_account_positions_with_binance(account: Account, db: Session) -> Dict[s
                 market="CRYPTO",
                 quantity=binance_pos["quantity"],
                 available_quantity=binance_pos["available_quantity"],
-                avg_cost=binance_pos.get("avg_cost", 0),
+                avg_cost=avg_cost,
             )
             db.add(position)
             added_count += 1
             logger.debug(
                 f"Added new position {symbol} from Binance for account {account.name}: "
-                f"quantity={binance_pos['quantity']}"
+                f"quantity={binance_pos['quantity']}, avg_cost=${avg_cost:.6f}"
             )
 
         db.commit()

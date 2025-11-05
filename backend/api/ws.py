@@ -10,7 +10,7 @@ from typing import Dict, Optional, Set
 logger = logging.getLogger(__name__)
 
 from database.connection import SessionLocal
-from database.models import Account, AIDecisionLog, CryptoPrice, Position, Trade, User
+from database.models import Account, AIDecisionLog, CryptoPrice, Order, Position, Trade, User
 from fastapi import WebSocket, WebSocketDisconnect
 from repositories.account_repo import get_account, get_or_create_default_account
 from repositories.order_repo import list_orders
@@ -269,78 +269,88 @@ def get_all_asset_curves_data(db: Session, timeframe: str = "1h"):
 
 
 async def _send_snapshot_optimized(db: Session, account_id: int):
-    """Optimized version of snapshot that reduces expensive operations"""
+    """
+    Optimized snapshot: Read all data from database cache instead of calling Binance API.
+    Broker data is synced to database by background task every 30 seconds.
+    """
     # The db parameter should already be from the correct database (real or paper)
-    account = db.query(Account).filter(Account.id == account_id).first()
-    if not account:
-        logging.warning(f"[SNAPSHOT] Account {account_id} not found in database for snapshot")
-        return
-
-    # Get balance and positions from Binance in real-time (single API call)
     try:
-        balance, positions_data = get_balance_and_positions(account)
+        account = db.query(Account).filter(Account.id == account_id).first()
+        if not account:
+            logging.warning(f"[SNAPSHOT] Account {account_id} not found in database for snapshot")
+            return
+
+        # Get balance from cache (updated by broker_data_sync task)
+        from services.broker_data_sync import AccountBalanceCache
+        balance = AccountBalanceCache.get_balance(account_id)
+        if balance is None:
+            # If balance not in cache yet, try to get from Binance directly (fallback)
+            logger.warning(f"[SNAPSHOT] Balance not in cache for account {account_id}, fetching from Binance as fallback")
+            try:
+                from services.broker_adapter import get_balance_and_positions
+                balance, _ = get_balance_and_positions(account)
+            except Exception as binance_err:
+                logger.debug(f"[SNAPSHOT] Failed to get balance from Binance fallback: {binance_err}")
+                balance = None
         current_cash = float(balance) if balance is not None else 0.0
-        orders_data = get_open_orders(account)
     except Exception as e:
-        logger.debug(f"_send_snapshot_optimized: Failed to get balance/positions from Binance: {e}")
-        current_cash = 0.0
-        positions_data = []
-        orders_data = []
+        logging.error(f"[SNAPSHOT] Error getting account or balance for {account_id}: {e}", exc_info=True)
+        # Return early - don't send incomplete snapshot
+        return
 
     logger.debug(f"_send_snapshot_optimized: account_id={account_id}, cash=${current_cash:.2f}")
     logging.info(f"[SNAPSHOT] Sending snapshot for account {account_id}, cash=${current_cash:.2f}")
 
-    # Get avg_cost from database for each position
-    # Binance API doesn't provide avg_cost, so we need to get it from our database
+    # Get positions from database (synced by broker_data_sync task)
     db_positions = db.query(Position).filter(
         Position.account_id == account_id,
         Position.market == "CRYPTO"
     ).all()
     
-    # Create a map of symbol -> avg_cost from database
-    db_avg_cost_map = {pos.symbol: float(pos.avg_cost) for pos in db_positions if float(pos.avg_cost) > 0}
-    if db_avg_cost_map:
-        logger.info(f"_send_snapshot_optimized: Loaded avg_cost from DB: {db_avg_cost_map}")
-    else:
-        logger.warning(f"_send_snapshot_optimized: No avg_cost found in DB for account {account_id}")
-    
-    # Convert Binance positions to format expected by frontend
+    # Convert database positions to format expected by frontend
     positions = [
         {
             "id": i,
             "account_id": account_id,
-            "symbol": pos["symbol"],
-            "name": pos.get("name", pos["symbol"]),
+            "symbol": pos.symbol,
+            "name": pos.name,
             "market": "CRYPTO",
-            "quantity": float(pos["quantity"]),
-            "available_quantity": float(pos.get("available_quantity", pos["quantity"])),
-            # Use database avg_cost if available, otherwise fallback to Binance value (usually 0)
-            "avg_cost": db_avg_cost_map.get(pos["symbol"], float(pos.get("avg_cost", 0))),
+            "quantity": float(pos.quantity),
+            "available_quantity": float(pos.available_quantity),
+            "avg_cost": float(pos.avg_cost),
         }
-        for i, pos in enumerate(positions_data)
+        for i, pos in enumerate(db_positions) if float(pos.quantity) > 0
     ]
 
-    # Convert Binance orders to format expected by frontend
+    # Get orders from database (synced by broker_data_sync task)
+    db_orders = db.query(Order).filter(
+        Order.account_id == account_id,
+        Order.market == "CRYPTO",
+        Order.status.in_(["PENDING", "PARTIALLY_FILLED", "NEW"])
+    ).all()
+    
+    # Convert database orders to format expected by frontend
     orders = [
         {
-            "id": i,
+            "id": order.id,
             "account_id": account_id,
-            "order_no": order.get("order_id", str(i)),
-            "symbol": order["symbol"],
-            "name": order.get("name", order["symbol"]),
+            "order_no": order.order_no,
+            "symbol": order.symbol,
+            "name": order.name,
             "market": "CRYPTO",
-            "side": order["side"],
-            "order_type": order["order_type"],
-            "price": float(order.get("price", 0)) if order.get("price") else None,
-            "quantity": float(order["quantity"]),
-            "filled_quantity": float(order.get("filled_quantity", 0)),
-            "status": order["status"],
+            "side": order.side,
+            "order_type": order.order_type,
+            "price": float(order.price) if order.price else None,
+            "quantity": float(order.quantity),
+            "filled_quantity": float(order.filled_quantity),
+            "status": order.status,
         }
-        for i, order in enumerate(orders_data)
+        for order in db_orders
     ]
 
-    # Get trades from metadata DB (completed trades are stored)
-    trades = db.query(Trade).filter(Trade.account_id == account_id).order_by(Trade.trade_time.desc()).limit(10).all()
+    # Trades are fetched on-demand via REST API (/api/arena/trades)
+    # Not included in snapshot to avoid expensive Binance API calls
+    trades = []
     ai_decisions = (
         db.query(AIDecisionLog)
         .filter(AIDecisionLog.account_id == account_id)
@@ -349,9 +359,9 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
         .all()
     )
 
-    # Calculate positions value from real-time data
+    # Calculate positions value from database data
     positions_value = 0.0
-    for pos in positions_data:
+    for pos in positions:
         try:
             price = get_last_price(pos["symbol"], "CRYPTO")
             if price:
@@ -400,17 +410,50 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
         # Calculate market value and unrealized P&L
         market_value = None
         unrealized_pnl = None
+        current_price = None
+        notional = 0.0
+        
         if price is not None:
-            market_value = float(price) * quantity
-            # Unrealized P&L = Current Value - Cost Basis
-            cost_basis = avg_cost * quantity
-            unrealized_pnl = market_value - cost_basis
-            # Debug log for first position to verify calculation
-            if p["symbol"] in ["BTC", "BNB", "ETH", "SOL"]:
+            current_price = float(price)
+            market_value = current_price * quantity
+            
+            # Calculate notional (cost basis) and unrealized P&L
+            if avg_cost > 0:
+                notional = avg_cost * quantity
+                cost_basis = notional
+                # Unrealized P&L = Current Value - Cost Basis
+                unrealized_pnl = market_value - cost_basis
+            else:
+                # If avg_cost is 0 or missing, we cannot calculate accurate P&L
+                # Set notional to 0 and unrealized_pnl to None/0 to avoid showing incorrect value
+                notional = 0.0
+                cost_basis = 0.0
+                unrealized_pnl = 0.0  # Set to 0 instead of market_value to avoid confusion
+                logger.warning(
+                    f"[P&L] {p['symbol']}: avg_cost is 0 or unset. Cannot calculate accurate unrealized P&L. "
+                    f"Setting unrealized_pnl to 0. Please ensure avg_cost is correctly set in database. "
+                    f"Market value: ${market_value:.2f}"
+                )
+            
+            # Debug log for positions to verify calculation (including XRP)
+            if p["symbol"] in ["BTC", "BNB", "ETH", "SOL", "XRP"]:
                 logger.info(
-                    f"[P&L] {p['symbol']}: price=${price:.2f}, qty={quantity:.8f}, "
-                    f"avg_cost=${avg_cost:.2f}, market_value=${market_value:.2f}, "
+                    f"[P&L] {p['symbol']}: price=${current_price:.2f}, qty={quantity:.8f}, "
+                    f"avg_cost=${avg_cost:.2f}, notional=${notional:.2f}, market_value=${market_value:.2f}, "
                     f"cost_basis=${cost_basis:.2f}, unrealized_pnl=${unrealized_pnl:.2f}"
+                )
+        else:
+            # If price is None but we have avg_cost, we can still calculate notional
+            if avg_cost > 0:
+                notional = avg_cost * quantity
+                logger.warning(
+                    f"[P&L] {p['symbol']}: Price unavailable, but avg_cost=${avg_cost:.2f}, "
+                    f"qty={quantity:.8f}, notional=${notional:.2f}"
+                )
+            else:
+                logger.warning(
+                    f"[P&L] {p['symbol']}: Both price and avg_cost unavailable/unset. "
+                    f"qty={quantity:.8f}"
                 )
         
         enriched_positions.append(
@@ -423,8 +466,11 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
                 "quantity": quantity,
                 "available_quantity": float(p["available_quantity"]),
                 "avg_cost": avg_cost,
-                "last_price": float(price) if price is not None else None,
+                "last_price": current_price,
+                "current_price": current_price,  # Add current_price for compatibility
+                "notional": notional,  # Add notional field
                 "market_value": market_value,
+                "current_value": market_value,  # Add current_value for compatibility
                 "unrealized_pnl": unrealized_pnl,
             }
         )
@@ -436,7 +482,7 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
     
     # Prepare response data - exclude expensive asset curve calculation for frequent updates
     response_data = {
-        "type": "snapshot_fast",  # Different type to indicate this is optimized
+        "type": "snapshot",  # Frontend expects "snapshot" type
         "overview": overview,
         "positions": enriched_positions,
         "total_unrealized_pnl": total_unrealized_pnl,
@@ -459,17 +505,17 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
         ],
         "trades": [
             {
-                "id": t.id,
-                "order_id": t.order_id,
-                "user_id": t.account_id,
-                "symbol": t.symbol,
-                "name": t.name,
-                "market": t.market,
-                "side": t.side,
-                "price": float(t.price),
-                "quantity": float(t.quantity),
-                "commission": float(t.commission),
-                "trade_time": str(t.trade_time),
+                "id": t.get("id", 0),
+                "order_id": t.get("order_id"),
+                "user_id": t.get("account_id", account_id),
+                "symbol": t.get("symbol", ""),
+                "name": t.get("name", t.get("symbol", "")),
+                "market": t.get("market", "CRYPTO"),
+                "side": t.get("side", "BUY"),
+                "price": float(t.get("price", 0)),
+                "quantity": float(t.get("quantity", 0)),
+                "commission": float(t.get("commission", 0)),
+                "trade_time": str(t.get("trade_time")) if t.get("trade_time") else None,
             }
             for t in trades
         ],
@@ -497,7 +543,7 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
     if current_second < 10:  # First 10 seconds of each minute
         try:
             response_data["all_asset_curves"] = get_all_asset_curves_data(db, "1h")
-            response_data["type"] = "snapshot_full"  # Indicate this includes full data
+            # Keep type as "snapshot" - frontend expects this
         except Exception as e:
             logging.error(f"Failed to get asset curves: {e}")
 
@@ -508,220 +554,15 @@ async def _send_snapshot_optimized(db: Session, account_id: int):
 
 
 async def _send_snapshot(db: Session, account_id: int):
-    """Send snapshot - trading data fetched from Binance in real-time"""
-    # Get account metadata from metadata database
-    account = db.query(Account).filter(Account.id == account_id).first()
-    if not account:
-        return
-
-    # Get trading data from Binance in real-time (single API call for balance and positions)
-    try:
-        balance, positions_data = get_balance_and_positions(account)
-        orders_data = get_open_orders(account)
-    except Exception as e:
-        logging.error(f"Failed to fetch Binance data for account {account_id}: {e}")
-        balance = None
-        positions_data = []
-        orders_data = []
-
-    # Get avg_cost from database for each position
-    # Binance API doesn't provide avg_cost, so we need to get it from our database
-    db_positions = db.query(Position).filter(
-        Position.account_id == account_id,
-        Position.market == "CRYPTO"
-    ).all()
-    
-    # Create a map of symbol -> avg_cost from database
-    db_avg_cost_map = {pos.symbol: float(pos.avg_cost) for pos in db_positions if float(pos.avg_cost) > 0}
-    if db_avg_cost_map:
-        logger.info(f"_send_snapshot: Loaded avg_cost from DB: {db_avg_cost_map}")
-    else:
-        logger.warning(f"_send_snapshot: No avg_cost found in DB for account {account_id}")
-    
-    # Convert Binance positions to format expected by frontend
-    positions = [
-        {
-            "id": i,
-            "account_id": account_id,
-            "symbol": pos["symbol"],
-            "quantity": float(pos["quantity"]),
-            "available_quantity": float(pos["available_quantity"]),
-            # Use database avg_cost if available, otherwise fallback to Binance value (usually 0)
-            "avg_cost": db_avg_cost_map.get(pos["symbol"], float(pos.get("avg_cost", 0))),
-            "market": "CRYPTO",
-        }
-        for i, pos in enumerate(positions_data)
-    ]
-
-    # Convert Binance orders to format expected by frontend
-    orders = [
-        {
-            "id": i,
-            "account_id": account_id,
-            "symbol": order["symbol"],
-            "side": order["side"],
-            "order_type": order["order_type"],
-            "quantity": float(order["quantity"]),
-            "price": float(order.get("price", 0)),
-            "status": order["status"],
-            "order_no": order.get("order_id", ""),
-            "create_time": order.get("open_time", datetime.now()),
-        }
-        for i, order in enumerate(orders_data)
-    ]
-
-    # Get trades and AI decisions from metadata database
-    trades = db.query(Trade).filter(Trade.account_id == account_id).order_by(Trade.trade_time.desc()).limit(20).all()
-    ai_decisions = (
-        db.query(AIDecisionLog)
-        .filter(AIDecisionLog.account_id == account_id)
-        .order_by(AIDecisionLog.decision_time.desc())
-        .limit(20)
-        .all()
-    )
-    # Calculate positions value
-    positions_value = 0.0
-    for pos in positions_data:
-        try:
-            price = get_last_price(pos["symbol"], "CRYPTO")
-            if price:
-                positions_value += float(price) * float(pos["quantity"])
-        except Exception:
-            pass
-
-    current_cash = float(balance) if balance is not None else 0.0
-
-    overview = {
-        "account": {
-            "id": account.id,
-            "user_id": account.user_id,
-            "name": account.name,
-            "account_type": account.account_type,
-            "current_cash": current_cash,
-            "frozen_cash": 0.0,  # Not tracked - all data from Binance
-        },
-        "total_assets": positions_value + current_cash,
-        "positions_value": positions_value,
-    }
-    # enrich positions with latest price and market value
-    enriched_positions = []
-    price_error_message = None
-
-    for p in positions:
-        # p is a dict, not an object (from Binance API data)
-        try:
-            price = get_last_price(p["symbol"], p.get("market", "CRYPTO"))
-        except Exception as e:
-            price = None
-            # Collect price retrieval error messages, especially cookie-related errors
-            error_msg = str(e)
-            if "cookie" in error_msg.lower() and price_error_message is None:
-                price_error_message = error_msg
-
-        quantity = float(p["quantity"])
-        # Use database avg_cost if available, otherwise fallback to Binance value (usually 0)
-        avg_cost = db_avg_cost_map.get(p["symbol"], float(p.get("avg_cost", 0)))
-        
-        # Calculate market value and unrealized P&L
-        market_value = None
-        unrealized_pnl = None
-        if price is not None:
-            market_value = float(price) * quantity
-            # Unrealized P&L = Current Value - Cost Basis
-            cost_basis = avg_cost * quantity
-            unrealized_pnl = market_value - cost_basis
-            # Debug log for first position to verify calculation
-            if p["symbol"] in ["BTC", "BNB", "ETH", "SOL"]:
-                logger.info(
-                    f"[P&L _send_snapshot] {p['symbol']}: price=${price:.2f}, qty={quantity:.8f}, "
-                    f"avg_cost=${avg_cost:.2f}, market_value=${market_value:.2f}, "
-                    f"cost_basis=${cost_basis:.2f}, unrealized_pnl=${unrealized_pnl:.2f}"
-                )
-
-        enriched_positions.append(
-            {
-                "id": p["id"],
-                "account_id": p["account_id"],
-                "symbol": p["symbol"],
-                "name": p.get("name", p["symbol"]),  # Use symbol as name if not provided
-                "market": p.get("market", "CRYPTO"),
-                "quantity": quantity,
-                "available_quantity": float(p.get("available_quantity", p["quantity"])),
-                "avg_cost": avg_cost,
-                "last_price": float(price) if price is not None else None,
-                "market_value": market_value,
-                "unrealized_pnl": unrealized_pnl,
-            }
-        )
-
-    # Calculate total unrealized P&L
-    total_unrealized_pnl = sum(
-        (pos.get("unrealized_pnl") or 0) for pos in enriched_positions
-    )
-
-    # Prepare response data
-    response_data = {
-        "type": "snapshot",
-        "overview": overview,
-        "positions": enriched_positions,
-        "total_unrealized_pnl": total_unrealized_pnl,
-        "orders": [
-            {
-                "id": o["id"],
-                "order_no": o["order_no"],
-                "user_id": o["account_id"],
-                "symbol": o["symbol"],
-                "name": o["symbol"],  # Use symbol as name
-                "market": "CRYPTO",
-                "side": o["side"],
-                "order_type": o["order_type"],
-                "price": o["price"],
-                "quantity": o["quantity"],
-                "filled_quantity": 0.0,  # Not tracked for Binance orders
-                "status": o["status"],
-            }
-            for o in orders[:20]
-        ],
-        "trades": [
-            {
-                "id": t.id,
-                "order_id": t.order_id,
-                "user_id": t.account_id,
-                "symbol": t.symbol,
-                "name": t.name,
-                "market": t.market,
-                "side": t.side,
-                "price": float(t.price),
-                "quantity": float(t.quantity),
-                "commission": float(t.commission),
-                "trade_time": str(t.trade_time),
-            }
-            for t in trades
-        ],
-        "ai_decisions": [
-            {
-                "id": d.id,
-                "decision_time": str(d.decision_time),
-                "reason": d.reason,
-                "operation": d.operation,
-                "symbol": d.symbol,
-                "prev_portion": float(d.prev_portion),
-                "target_portion": float(d.target_portion),
-                "total_balance": float(d.total_balance),
-                "executed": str(d.executed).lower() if d.executed else "false",
-                "order_id": d.order_id,
-            }
-            for d in ai_decisions
-        ],
-        "all_asset_curves": get_all_asset_curves_data(db, "1h"),
-    }
-
-    if price_error_message:
-        response_data["warning"] = {"type": "market_data_error", "message": price_error_message}
-
-    await manager.send_to_account(account_id, response_data)
+    """
+    Send snapshot - now uses database cache instead of real-time Binance API calls.
+    Delegates to _send_snapshot_optimized for better performance.
+    """
+    # Simply delegate to optimized version which reads from database
+    await _send_snapshot_optimized(db, account_id)
 
 
+# Removed duplicate websocket_endpoint and old dead code - using the websocket_endpoint below
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
@@ -792,7 +633,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     "account": {"id": account.id, "name": account.name, "user_id": account.user_id},
                                 },
                             )
-                            await _send_snapshot(db, account_id)
+                            await _send_snapshot_optimized(db, account_id)
                         else:
                             # Send bootstrap with no account info
                             await websocket.send_text(
@@ -806,7 +647,22 @@ async def websocket_endpoint(websocket: WebSocket):
                             )
                     except Exception as e:
                         logging.error(f"Failed to send bootstrap response: {e}", exc_info=True)
-                        break
+                        # Try to send bootstrap_ok even if snapshot fails
+                        try:
+                            await websocket.send_text(
+                                json.dumps(
+                                    {
+                                        "type": "bootstrap_ok",
+                                        "user": {"id": user.id, "username": user.username},
+                                        "account": {"id": account.id, "name": account.name} if account else None,
+                                        "error": str(e),
+                                    }
+                                )
+                            )
+                        except Exception as send_err:
+                            logging.error(f"Failed to send error response: {send_err}")
+                        # Don't break - continue to process other messages
+                        continue
                 elif kind == "subscribe":
                     # subscribe existing user_id
                     uid = int(msg.get("user_id"))
@@ -820,7 +676,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     user_id = uid
                     manager.register(user_id, websocket)
                     try:
-                        await _send_snapshot(db, user_id)
+                        await _send_snapshot_optimized(db, user_id)
                     except Exception as e:
                         logging.error(f"Failed to send snapshot: {e}")
                         break
@@ -887,7 +743,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     if account_id is not None:
                         account = get_account(db, account_id)
                         if account:
-                            await _send_snapshot(db, account_id)
+                            await _send_snapshot_optimized(db, account_id)
                 elif kind == "get_asset_curve":
                     # Get asset curve data with specific timeframe
                     timeframe = msg.get("timeframe", "1h")
