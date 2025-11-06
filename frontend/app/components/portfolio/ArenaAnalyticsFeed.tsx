@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ArenaAccountMeta,
@@ -159,10 +159,11 @@ function ArenaAnalyticsFeedComponent({
     (key: CacheKey) => {
       const cached = ANALYTICS_CACHE.get(key)
       if (!cached) return false
-      setAnalyticsAccounts(cached.accounts)
-      setSummary(cached.summary)
-      setGeneratedAt(cached.generatedAt)
-      setAccountsMeta(cached.accountsMeta)
+      // Ensure all cached values are valid types
+      setAnalyticsAccounts(Array.isArray(cached.accounts) ? cached.accounts : [])
+      setSummary(cached.summary ?? null)
+      setGeneratedAt(cached.generatedAt ?? null)
+      setAccountsMeta(Array.isArray(cached.accountsMeta) ? cached.accountsMeta : [])
       setLoading(false)
       return true
     },
@@ -227,9 +228,10 @@ function ArenaAnalyticsFeedComponent({
 
         if (!isMounted) return
 
-        const nextAccounts = analyticsRes.accounts || []
-        const nextSummary = analyticsRes.summary || null
-        const nextGeneratedAt = analyticsRes.generated_at || null
+        // Ensure all values are valid types
+        const nextAccounts = Array.isArray(analyticsRes.accounts) ? analyticsRes.accounts : []
+        const nextSummary = analyticsRes.summary ?? null
+        const nextGeneratedAt = analyticsRes.generated_at ?? null
 
         const incoming = nextAccounts.length ? buildAccountsMeta(nextAccounts) : []
         let mergedMeta: ArenaAccountMeta[] = []
@@ -312,25 +314,68 @@ function ArenaAnalyticsFeedComponent({
     writeCache,
   ])
 
-  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 22: useMemo accountOptions`)
-  const accountOptions = useMemo(() => {
-    console.log(`[ArenaAnalyticsFeed:${renderId}] useMemo accountOptions executed`, { count: allTraderOptions.length })
-    return allTraderOptions.sort((a, b) => a.name.localeCompare(b.name))
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 22: useState accountOptions`)
+  const [accountOptions, setAccountOptions] = useState<ArenaAccountMeta[]>([])
+
+  // Calculate accountOptions in useEffect instead of useMemo to avoid rendering errors
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 23: useEffect calculateAccountOptions`)
+  useEffect(() => {
+    try {
+      const sorted = Array.isArray(allTraderOptions)
+        ? [...allTraderOptions].sort((a, b) => a.name.localeCompare(b.name))
+        : []
+      console.log(`[ArenaAnalyticsFeed:${renderId}] useEffect calculateAccountOptions executed`, { count: sorted.length })
+      setAccountOptions(sorted)
+    } catch (error) {
+      console.error(`[ArenaAnalyticsFeed:${renderId}] Error in calculateAccountOptions useEffect:`, error)
+      setAccountOptions([])
+    }
   }, [allTraderOptions])
 
-  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 23: useMemo memoisedAggregates`)
-  const memoisedAggregates = useMemo(() => {
-    console.log(`[ArenaAnalyticsFeed:${renderId}] useMemo memoisedAggregates executed`, { accountsCount: analyticsAccounts.length })
-    const totals = analyticsAccounts.reduce(
-      (acc, account) => {
-        acc.tradeCount += account.trade_count || 0
-        acc.decisionCount += account.decision_count || 0
-        acc.executedDecisions += account.executed_decisions || 0
-        return acc
-      },
-      { tradeCount: 0, decisionCount: 0, executedDecisions: 0 },
-    )
-    return totals
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 24: useState memoisedAggregates`)
+  const [memoisedAggregates, setMemoisedAggregates] = useState<{
+    tradeCount: number
+    decisionCount: number
+    executedDecisions: number
+  }>({ tradeCount: 0, decisionCount: 0, executedDecisions: 0 })
+
+  // Calculate aggregates in useEffect instead of useMemo to avoid rendering errors
+  console.log(`[ArenaAnalyticsFeed:${renderId}] Hook 25: useEffect calculateAggregates`)
+  useEffect(() => {
+    try {
+      // Ensure analyticsAccounts is always an array before accessing its properties
+      const accounts = Array.isArray(analyticsAccounts) ? analyticsAccounts : []
+      console.log(`[ArenaAnalyticsFeed:${renderId}] useEffect calculateAggregates executed`, {
+        accountsCount: accounts.length,
+        isArray: Array.isArray(analyticsAccounts),
+        type: typeof analyticsAccounts
+      })
+
+      // Helper function to safely convert to number
+      const safeNumber = (value: any): number => {
+        if (value === null || value === undefined) return 0
+        const num = typeof value === 'number' ? value : Number(value)
+        return isNaN(num) || !isFinite(num) ? 0 : num
+      }
+
+      const totals = accounts.reduce(
+        (acc, account) => {
+          if (!account || typeof account !== 'object') return acc
+          acc.tradeCount += safeNumber(account.trade_count)
+          acc.decisionCount += safeNumber(account.decision_count)
+          acc.executedDecisions += safeNumber(account.executed_decisions)
+          return acc
+        },
+        { tradeCount: 0, decisionCount: 0, executedDecisions: 0 },
+      )
+      setMemoisedAggregates(totals)
+    } catch (error) {
+      console.error(`[ArenaAnalyticsFeed:${renderId}] Error in calculateAggregates useEffect:`, error, {
+        analyticsAccounts,
+        isArray: Array.isArray(analyticsAccounts)
+      })
+      setMemoisedAggregates({ tradeCount: 0, decisionCount: 0, executedDecisions: 0 })
+    }
   }, [analyticsAccounts])
 
   console.log(`[ArenaAnalyticsFeed:${renderId}] All hooks completed`)
@@ -618,7 +663,7 @@ function ArenaAnalyticsFeedComponent({
 
       <Tabs
         value={activeTab}
-        onValueChange={(value: FeedTab) => setActiveTab(value)}
+        onValueChange={(value: string) => setActiveTab(value as FeedTab)}
         className="flex-1 flex flex-col min-h-0"
       >
         <TabsList className="grid grid-cols-3 gap-0 border border-border bg-muted text-foreground">
@@ -666,8 +711,5 @@ function ArenaAnalyticsFeedComponent({
   )
 }
 
-// Export with memo to help React distinguish this component
-export default React.memo(ArenaAnalyticsFeedComponent, () => {
-  // Always return false to force re-render, but React will still track hooks separately
-  return false
-})
+// Export without memo to avoid React hooks confusion
+export default ArenaAnalyticsFeedComponent

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ArenaAccountMeta,
@@ -399,17 +399,40 @@ function AlphaArenaFeedComponent({
     writeCache,
   ])
 
-  console.log(`[AlphaArenaFeed:${renderId}] Hook 22: useMemo accountOptions`)
-  const accountOptions = useMemo(() => {
-    console.log(`[AlphaArenaFeed:${renderId}] useMemo accountOptions executed`, { count: allTraderOptions.length })
-    return allTraderOptions.sort((a, b) => a.name.localeCompare(b.name))
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 22: useState accountOptions`)
+  const [accountOptions, setAccountOptions] = useState<ArenaAccountMeta[]>([])
+
+  // Calculate accountOptions in useEffect instead of useMemo to avoid rendering errors
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 23: useEffect calculateAccountOptions`)
+  useEffect(() => {
+    try {
+      const sorted = Array.isArray(allTraderOptions)
+        ? [...allTraderOptions].sort((a, b) => a.name.localeCompare(b.name))
+        : []
+      console.log(`[AlphaArenaFeed:${renderId}] useEffect calculateAccountOptions executed`, { count: sorted.length })
+      setAccountOptions(sorted)
+    } catch (error) {
+      console.error(`[AlphaArenaFeed:${renderId}] Error in calculateAccountOptions useEffect:`, error)
+      setAccountOptions([])
+    }
   }, [allTraderOptions])
 
-  // Add a placeholder useMemo to match ArenaAnalyticsFeed's hooks count
-  console.log(`[AlphaArenaFeed:${renderId}] Hook 23: useMemo placeholderMemo`)
-  const placeholderMemo = useMemo(() => {
-    console.log(`[AlphaArenaFeed:${renderId}] useMemo placeholderMemo executed`)
-    return { placeholder: true }
+  // Add a placeholder useState to match ArenaAnalyticsFeed's hooks count and type
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 24: useState placeholderAggregates`)
+  const [, setPlaceholderAggregates] = useState<{
+    tradeCount: number
+    decisionCount: number
+    executedDecisions: number
+  }>({ tradeCount: 0, decisionCount: 0, executedDecisions: 0 })
+
+  // Add a placeholder useEffect to match ArenaAnalyticsFeed's hooks count (25 hooks)
+  console.log(`[AlphaArenaFeed:${renderId}] Hook 25: useEffect placeholder`)
+  useEffect(() => {
+    // This is a placeholder to ensure hooks consistency
+    console.log(`[AlphaArenaFeed:${renderId}] useEffect placeholder executed`)
+    return () => {
+      // Cleanup placeholder
+    }
   }, [])
 
   console.log(`[AlphaArenaFeed:${renderId}] All hooks completed`)
@@ -832,8 +855,5 @@ function AlphaArenaFeedComponent({
   )
 }
 
-// Export with memo to help React distinguish this component
-export default React.memo(AlphaArenaFeedComponent, (prevProps, nextProps) => {
-  // Always return false to force re-render, but React will still track hooks separately
-  return false
-})
+// Export without memo to avoid React hooks confusion
+export default AlphaArenaFeedComponent

@@ -499,6 +499,7 @@ export default function AccountDataView(props: AccountDataViewProps) {
             <div className={`flex-1 h-0 overflow-hidden ${showStrategyPanel ? 'grid grid-cols-4 gap-4' : ''}`}>
               <div className={`${showStrategyPanel ? 'col-span-3' : 'col-span-1'} h-full overflow-hidden flex flex-col border border-border rounded-lg bg-card shadow-sm px-4 py-3 gap-4 relative`}>
                 <ArenaFeedSwitcher
+                  key="arena-feed-switcher"
                   showAlpha={showAssetCurves}
                   refreshKey={accountRefreshTrigger}
                   wsRef={wsRef}

@@ -327,3 +327,12 @@ kraken/token_map.yaml
 .api.yaml
 
 uv.lock
+
+*.db-wal
+*.db-shm
+
+backend/metadata.db-wal
+backend/metadata.db-shm
+backend/metadata.db.backup
+backend/metadata.db.corrupted
+backend/metadata.db-shm

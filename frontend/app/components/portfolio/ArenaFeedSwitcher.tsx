@@ -12,52 +12,42 @@ interface ArenaFeedSwitcherProps {
 
 /**
  * Wrapper component that conditionally renders either AlphaArenaFeed or ArenaAnalyticsFeed.
- * This ensures React always sees the same component type at the same position,
- * preventing hooks confusion.
+ * 
+ * IMPORTANT: We use true conditional rendering (not CSS hiding) to ensure React
+ * only tracks hooks for the currently visible component. This prevents hooks
+ * order conflicts when child components (like Tabs) use useMemo internally.
  */
-export default function ArenaFeedSwitcher({
+function ArenaFeedSwitcherComponent({
     showAlpha,
     refreshKey,
     wsRef,
     selectedAccount,
     onSelectedAccountChange,
 }: ArenaFeedSwitcherProps) {
-    // Always render both components, but use CSS to hide/show
-    // This ensures hooks are always called in the same order
+    // Use true conditional rendering with stable wrapper to avoid hooks conflicts
+    // React will only track hooks for the rendered component
+    // Using a stable wrapper div ensures React properly unmounts/remounts components
     return (
-        <>
-            <div
-                className="absolute inset-0 overflow-auto"
-                style={{
-                    visibility: showAlpha ? 'visible' : 'hidden',
-                    opacity: showAlpha ? 1 : 0,
-                    pointerEvents: showAlpha ? 'auto' : 'none',
-                    zIndex: showAlpha ? 1 : 0,
-                }}
-            >
+        <div className="absolute inset-0 overflow-auto">
+            {showAlpha ? (
                 <AlphaArenaFeed
-                    refreshKey={refreshKey}
+                    key="alpha-arena-feed-stable"
+                    refreshKey={refreshKey ?? 0}
                     wsRef={wsRef}
                     selectedAccount={selectedAccount}
                     onSelectedAccountChange={onSelectedAccountChange}
                 />
-            </div>
-            <div
-                className="absolute inset-0 overflow-auto"
-                style={{
-                    visibility: showAlpha ? 'hidden' : 'visible',
-                    opacity: showAlpha ? 0 : 1,
-                    pointerEvents: showAlpha ? 'none' : 'auto',
-                    zIndex: showAlpha ? 0 : 1,
-                }}
-            >
+            ) : (
                 <ArenaAnalyticsFeed
-                    refreshKey={refreshKey}
+                    key="arena-analytics-feed-stable"
+                    refreshKey={refreshKey ?? 0}
                     selectedAccount={selectedAccount}
                     onSelectedAccountChange={onSelectedAccountChange}
                 />
-            </div>
-        </>
+            )}
+        </div>
     )
 }
 
+// Export without memo to avoid any hooks-related issues
+export default ArenaFeedSwitcherComponent
