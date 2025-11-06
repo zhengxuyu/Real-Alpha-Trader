@@ -39,11 +39,14 @@ export default function Header({ title = 'Hyper Alpha Arena' }: HeaderProps) {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))
   }
 
+
+  const logoSrc = import.meta.env.PROD ? "/static/logo_app.png" : "/logo_app.png"
+
   return (
     <header className="w-full border-b bg-background/50 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="w-full py-2 px-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img src="/static/logo_app.png" alt="Logo" className="h-8 w-8 object-contain" />
+          <img src={logoSrc} alt="Logo" className="h-8 w-8 object-contain" />
           <h1 className="text-xl font-bold">{title}</h1>
         </div>
 

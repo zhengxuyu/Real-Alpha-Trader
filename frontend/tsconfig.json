@@ -18,7 +18,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./app/*"]
-    }
+    },
+    "types": ["vite/client"]
   },
   "include": ["app"]
 }
