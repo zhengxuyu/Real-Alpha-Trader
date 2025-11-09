@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
 import { Toaster, toast } from 'react-hot-toast'
+import ErrorBoundary from '@/components/common/ErrorBoundary'
 
 // Global error handler for debugging
 window.addEventListener('error', (event) => {
@@ -90,6 +91,37 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null)
   const [accounts, setAccounts] = useState<any[]>([])
   const [accountsLoading, setAccountsLoading] = useState<boolean>(true)
+
+  // Update a global debug snapshot for ErrorBoundary to read on crash (prod-only useful)
+  useEffect(() => {
+    ;(window as any).__APP_STATE_DEBUG__ = {
+      currentPage,
+      hasUser: !!user,
+      hasAccount: !!account,
+      hasOverview: !!overview,
+      counts: {
+        positions: positions?.length ?? 0,
+        orders: orders?.length ?? 0,
+        trades: trades?.length ?? 0,
+        aiDecisions: aiDecisions?.length ?? 0,
+        allAssetCurves: allAssetCurves?.length ?? 0,
+        accounts: accounts?.length ?? 0,
+      },
+      accountsLoading,
+    }
+  }, [
+    currentPage,
+    user,
+    account,
+    overview,
+    positions,
+    orders,
+    trades,
+    aiDecisions,
+    allAssetCurves,
+    accounts,
+    accountsLoading,
+  ])
 
   useEffect(() => {
     let reconnectTimer: NodeJS.Timeout | null = null
@@ -380,6 +412,8 @@ function App() {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Toaster position="top-right" />
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 )

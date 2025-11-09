@@ -20,3 +20,15 @@
 - 开发环境：http://localhost:8802/，刷新后不再出现 404，左上角 Logo 与标签页 favicon 正常显示。
 - 生产环境：构建并部署后，资源由 `/static` 提供，Logo 显示正常。
 
+
+- 时间：2025-11-09
+- 目的：线上白屏难以复现时，增加错误边界与状态快照，辅助定位生产报错（如 React #310）。
+
+## 变更摘要
+- 新增错误边界组件 app/components/common/ErrorBoundary.tsx，用于捕获渲染阶段异常并展示降级 UI
+- main.tsx
+  - 在 <App /> 外包裹 <ErrorBoundary>
+  - 新增运行时状态快照 (window.__APP_STATE_DEBUG__)，包含当前路由与关键列表长度，便于在生产日志中还原上下文
+
+## 验证
+- 本地 dev 启动后，手动抛错可看到降级 UI；控制台会输出 componentStack 与状态快照
