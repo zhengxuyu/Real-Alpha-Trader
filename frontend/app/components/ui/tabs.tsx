@@ -31,7 +31,7 @@ const TabsContext = React.createContext<{
   setActiveTab: (value: string) => void
 }>({
   activeTab: '',
-  setActiveTab: () => {}
+  setActiveTab: () => { }
 })
 
 export function Tabs({ defaultValue, value, onValueChange, children, className }: TabsProps) {
@@ -84,11 +84,14 @@ export function TabsTrigger({ value, children, className }: TabsTriggerProps) {
 export function TabsContent({ value, children, className }: TabsContentProps) {
   const { activeTab } = React.useContext(TabsContext)
 
-  if (activeTab !== value) return null
-
+  // Always render the div to maintain hooks consistency, but conditionally show content
+  // This prevents React hooks order conflicts when tabs switch
   return (
-    <div className={cn('flex flex-col ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2', className)}>
-      {children}
+    <div
+      className={cn('flex flex-col ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2', className)}
+      style={{ display: activeTab === value ? 'flex' : 'none' }}
+    >
+      {activeTab === value ? children : null}
     </div>
   )
 }

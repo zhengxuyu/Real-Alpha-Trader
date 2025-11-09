@@ -177,8 +177,16 @@ export default function AssetCurve({
     '#000000', '#333333'
   ]
 
+  // Convert useMemo to useState + useEffect to avoid hooks order issues
+  const [baseProcessedData, setBaseProcessedData] = useState<{
+    chartData: any[]
+    accountSummaries: any[]
+    uniqueUsers: string[]
+    userAccountMap: Map<string, number | undefined>
+  }>({ chartData: [], accountSummaries: [], uniqueUsers: [], userAccountMap: new Map() })
+  
   // Split processedData into stable and live parts to reduce re-renders
-  const baseProcessedData = useMemo(() => {
+  useEffect(() => {
     if (!data || data.length === 0) {
       return { chartData: [], accountSummaries: [], uniqueUsers: [], userAccountMap: new Map() }
     }
@@ -251,11 +259,18 @@ export default function AssetCurve({
       }
     })
 
-    return { chartData, accountSummaries, uniqueUsers, userAccountMap }
+    setBaseProcessedData({ chartData, accountSummaries, uniqueUsers, userAccountMap })
   }, [data, timeframe])
 
   // Apply live updates to the last data point only
-  const processedData = useMemo(() => {
+  const [processedData, setProcessedData] = useState<{
+    chartData: any[]
+    accountSummaries: any[]
+    uniqueUsers: string[]
+    rankedAccounts: any[]
+  }>({ chartData: [], accountSummaries: [], uniqueUsers: [], rankedAccounts: [] })
+  
+  useEffect(() => {
     const { chartData, accountSummaries, uniqueUsers, userAccountMap } = baseProcessedData
 
     // Create a copy of chartData and update only the last point with live data
@@ -285,12 +300,12 @@ export default function AssetCurve({
 
     const rankedAccounts = updatedAccountSummaries.slice().sort((a, b) => b.assets - a.assets)
 
-    return {
+    setProcessedData({
       chartData: updatedChartData,
       accountSummaries: updatedAccountSummaries,
       uniqueUsers,
       rankedAccounts
-    }
+    })
   }, [baseProcessedData, liveAccountTotals])
 
   const { chartData, accountSummaries, uniqueUsers, rankedAccounts } = processedData
@@ -315,7 +330,9 @@ export default function AssetCurve({
     highlightAccountId && highlightAccountId !== 'all' ? highlightAccountId : null
 
   // Calculate Y-axis domain with single trader scaling
-  const yAxisDomain = useMemo(() => {
+  const [yAxisDomain, setYAxisDomain] = useState<[number, number]>([0, 100000])
+  
+  useEffect(() => {
     if (!chartData.length) return [0, 100000]
 
     let min = Infinity
@@ -349,10 +366,12 @@ export default function AssetCurve({
     const paddedMin = Math.max(0, min - padding)
     const paddedMax = max + padding
 
-    return [paddedMin, paddedMax]
+    setYAxisDomain([paddedMin, paddedMax])
   }, [chartData, uniqueUsers, activeLegendAccountId, accountSummaries, highlightAccountId])
 
-  const accountMeta = useMemo(() => {
+  const [accountMeta, setAccountMeta] = useState<Map<string, { accountId?: number; color: string; logo?: { src: string; alt: string; color?: string } }>>(new Map())
+  
+  useEffect(() => {
     const meta = new Map<string, { accountId?: number; color: string; logo?: { src: string; alt: string; color?: string } }>()
     uniqueUsers.forEach((username, index) => {
       const account = accountSummaries.find(acc => acc.username === username)
@@ -364,7 +383,7 @@ export default function AssetCurve({
         logo: account?.logo,
       })
     })
-    return meta
+    setAccountMeta(meta)
   }, [uniqueUsers, accountSummaries])
 
   const renderTerminalDot = useCallback((username: string, color: string) => {

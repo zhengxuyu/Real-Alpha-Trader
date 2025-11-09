@@ -129,10 +129,13 @@ export default function AccountDataView(props: AccountDataViewProps) {
     total_assets: number
   } | null>(null)
   const [realtimeSymbolTotals, setRealtimeSymbolTotals] = useState<Record<string, number> | null>(null)
-  const currentAccountId = useMemo(() => {
+  const [currentAccountId, setCurrentAccountId] = useState<number | null>(null)
+
+  // Convert useMemo to useState + useEffect to avoid hooks order issues
+  useEffect(() => {
     const id = overview?.account?.id ?? null
-    console.log('[AccountDataView] useMemo currentAccountId', { id, hasOverview: !!overview })
-    return id
+    console.log('[AccountDataView] useEffect currentAccountId', { id, hasOverview: !!overview })
+    setCurrentAccountId(id)
   }, [overview])
 
   useEffect(() => {
@@ -216,17 +219,26 @@ export default function AccountDataView(props: AccountDataViewProps) {
     }
   }, [onSwitchAccount, currentAccountId])
 
-  const strategyAccounts = useMemo(() => {
-    console.log('[AccountDataView] useMemo strategyAccounts', { accountsCount: props.accounts?.length ?? 0 })
-    if (!props.accounts || props.accounts.length === 0) return []
-    return props.accounts.map((account: any) => ({
-      id: account.id,
-      name: account.name || account.username || `Trader ${account.id}`,
-      model: account.model ?? null,
-    }))
+  const [strategyAccounts, setStrategyAccounts] = useState<Array<{ id: number; name: string; model: string | null }>>([])
+
+  // Convert useMemo to useState + useEffect to avoid hooks order issues
+  useEffect(() => {
+    console.log('[AccountDataView] useEffect strategyAccounts', { accountsCount: props.accounts?.length ?? 0 })
+    if (!props.accounts || props.accounts.length === 0) {
+      setStrategyAccounts([])
+    } else {
+      setStrategyAccounts(props.accounts.map((account: any) => ({
+        id: account.id,
+        name: account.name || account.username || `Trader ${account.id}`,
+        model: account.model ?? null,
+      })))
+    }
   }, [props.accounts])
 
-  const accountPositionSummaries = useMemo(() => {
+  const [accountPositionSummaries, setAccountPositionSummaries] = useState<Array<{ symbol: string; marketValue: number }>>([])
+
+  // Convert useMemo to useState + useEffect to avoid hooks order issues
+  useEffect(() => {
     const accountId = overview?.account?.id ?? null
     const aggregates = new Map<string, number>()
 
@@ -251,15 +263,19 @@ export default function AccountDataView(props: AccountDataViewProps) {
       aggregates.set(symbol, existing + (marketValue || 0))
     })
 
-    return SUPPORTED_SYMBOLS.map((symbol) => ({
+    setAccountPositionSummaries(SUPPORTED_SYMBOLS.map((symbol) => ({
       symbol,
       marketValue: aggregates.get(symbol) ?? 0,
-    }))
+    })))
   }, [positions, overview])
 
-  const globalPositionSummaries = useMemo(() => {
+  const [globalPositionSummaries, setGlobalPositionSummaries] = useState<Array<{ symbol: string; marketValue: number }>>([])
+
+  // Convert useMemo to useState + useEffect to avoid hooks order issues
+  useEffect(() => {
     if (!globalPositionSnapshots.length) {
-      return []
+      setGlobalPositionSummaries([])
+      return
     }
 
     const aggregates = new Map<string, number>()
@@ -281,49 +297,80 @@ export default function AccountDataView(props: AccountDataViewProps) {
       })
     })
 
-    return SUPPORTED_SYMBOLS.map((symbol) => ({
+    setGlobalPositionSummaries(SUPPORTED_SYMBOLS.map((symbol) => ({
       symbol,
       marketValue: aggregates.get(symbol) ?? 0,
-    }))
+    })))
   }, [globalPositionSnapshots])
 
-  const positionSummaries = useMemo(() => {
+  const [positionSummaries, setPositionSummaries] = useState<Array<{ symbol: string; marketValue: number }>>([])
+  const [accountPositionsValue, setAccountPositionsValue] = useState(0)
+
+  // Convert useMemo to useState + useEffect to avoid hooks order issues
+  useEffect(() => {
     if (realtimeSymbolTotals) {
-      return SUPPORTED_SYMBOLS.map((symbol) => ({
+      setPositionSummaries(SUPPORTED_SYMBOLS.map((symbol) => ({
         symbol,
         marketValue: realtimeSymbolTotals[symbol] ?? 0,
-      }))
+      })))
+    } else if (globalPositionSummaries.length > 0) {
+      setPositionSummaries(globalPositionSummaries)
+    } else {
+      setPositionSummaries(accountPositionSummaries)
     }
-    if (globalPositionSummaries.length > 0) {
-      return globalPositionSummaries
-    }
-    return accountPositionSummaries
   }, [realtimeSymbolTotals, globalPositionSummaries, accountPositionSummaries])
 
-  const accountPositionsValue = useMemo(() => {
+  useEffect(() => {
     if (overview?.positions_value !== undefined && overview.positions_value !== null) {
-      return overview.positions_value
+      setAccountPositionsValue(overview.positions_value)
+    } else {
+      setAccountPositionsValue(accountPositionSummaries.reduce((acc, position) => acc + position.marketValue, 0))
     }
-    return accountPositionSummaries.reduce((acc, position) => acc + position.marketValue, 0)
   }, [overview, accountPositionSummaries])
 
-  const accountAvailableCash = useMemo(() => overview?.account?.current_cash ?? 0, [overview])
-  const accountFrozenCash = useMemo(() => overview?.account?.frozen_cash ?? 0, [overview])
-  const accountTotalAssets = useMemo(() => {
+  const [accountAvailableCash, setAccountAvailableCash] = useState(0)
+  const [accountFrozenCash, setAccountFrozenCash] = useState(0)
+  const [accountTotalAssets, setAccountTotalAssets] = useState(0)
+
+  // Convert useMemo to useState + useEffect to avoid hooks order issues
+  useEffect(() => {
+    setAccountAvailableCash(overview?.account?.current_cash ?? 0)
+  }, [overview])
+
+  useEffect(() => {
+    setAccountFrozenCash(overview?.account?.frozen_cash ?? 0)
+  }, [overview])
+
+  useEffect(() => {
     if (overview?.total_assets !== undefined && overview.total_assets !== null) {
-      return overview.total_assets
+      setAccountTotalAssets(overview.total_assets)
+    } else {
+      setAccountTotalAssets(accountAvailableCash + accountFrozenCash + accountPositionsValue)
     }
-    return accountAvailableCash + accountFrozenCash + accountPositionsValue
   }, [overview, accountAvailableCash, accountFrozenCash, accountPositionsValue])
 
-  const aggregatedTotals = useMemo(() => {
+  const [aggregatedTotals, setAggregatedTotals] = useState<{
+    availableCash: number
+    frozenCash: number
+    positionsValue: number
+    totalAssets: number
+  }>({
+    availableCash: 0,
+    frozenCash: 0,
+    positionsValue: 0,
+    totalAssets: 0,
+  })
+
+  // Convert useMemo to useState + useEffect to avoid hooks order issues
+  useEffect(() => {
     if (realtimeTotals) {
-      return {
+      setAggregatedTotals({
         availableCash: realtimeTotals.available_cash,
         frozenCash: realtimeTotals.frozen_cash,
         positionsValue: realtimeTotals.positions_value,
         totalAssets: realtimeTotals.total_assets,
-      }
+      })
+      return
     }
 
     const hasGlobalSnapshots = globalPositionSnapshots.length > 0
@@ -357,12 +404,13 @@ export default function AccountDataView(props: AccountDataViewProps) {
       : 0
 
     if (!hasGlobalSnapshots && !hasAccountsList) {
-      return {
+      setAggregatedTotals({
         availableCash: accountAvailableCash,
         frozenCash: accountFrozenCash,
         positionsValue: accountPositionsValue,
         totalAssets: accountTotalAssets,
-      }
+      })
+      return
     }
 
     const availableCashTotal = hasGlobalSnapshots ? globalAvailableCash : accountAvailableCash
@@ -370,20 +418,20 @@ export default function AccountDataView(props: AccountDataViewProps) {
     const frozenCashTotal = hasAccountsList ? globalFrozenCash : (hasGlobalSnapshots ? 0 : accountFrozenCash)
     const totalAssetsTotal = availableCashTotal + frozenCashTotal + positionsValueTotal
 
-    return {
+    setAggregatedTotals({
       availableCash: availableCashTotal,
       frozenCash: frozenCashTotal,
       positionsValue: positionsValueTotal,
       totalAssets: totalAssetsTotal,
-    }
+    })
   }, [
+    realtimeTotals,
     globalPositionSnapshots,
     props.accounts,
     accountAvailableCash,
     accountFrozenCash,
     accountPositionsValue,
     accountTotalAssets,
-    realtimeTotals,
   ])
 
   // Always render the component structure to ensure hooks are always called in the same order
@@ -481,11 +529,12 @@ export default function AccountDataView(props: AccountDataViewProps) {
 
       {/* Main Content - Always render to ensure hooks consistency */}
       <div className="flex-1 min-h-0">
-        <div className={`grid gap-6 overflow-hidden ${showAssetCurves ? 'grid-cols-5' : 'grid-cols-1'} h-full min-h-0`}>
+        {/* Use fixed grid layout to prevent component remounting */}
+        <div className="grid grid-cols-5 gap-6 overflow-hidden h-full min-h-0">
           {/* Asset Curves - Always mounted to ensure hooks consistency */}
-          <div className={`col-span-3 min-h-0 border border-border rounded-lg bg-card shadow-sm px-4 py-3 flex flex-col gap-4`} style={{ display: showAssetCurves ? 'flex' : 'none' }}>
+          <div className="col-span-3 min-h-0 border border-border rounded-lg bg-card shadow-sm px-4 py-3 flex flex-col gap-4" style={{ display: showAssetCurves ? 'flex' : 'none' }}>
             <AssetCurveWithData
-              key="asset-curve"
+              key="asset-curve-stable"
               data={allAssetCurves}
               wsRef={wsRef}
               highlightAccountId={selectedArenaAccount}
@@ -494,7 +543,7 @@ export default function AccountDataView(props: AccountDataViewProps) {
           </div>
 
           {/* Tabs and Strategy Panel - Always render in same position to maintain hooks consistency */}
-          <div className={`${showAssetCurves ? 'col-span-2' : 'col-span-1'} overflow-hidden flex flex-col min-h-0`}>
+          <div className="col-span-2 overflow-hidden flex flex-col min-h-0">
             {/* Content Area */}
             <div className={`flex-1 h-0 overflow-hidden ${showStrategyPanel ? 'grid grid-cols-4 gap-4' : ''}`}>
               <div className={`${showStrategyPanel ? 'col-span-3' : 'col-span-1'} h-full overflow-hidden flex flex-col border border-border rounded-lg bg-card shadow-sm px-4 py-3 gap-4 relative`}>
