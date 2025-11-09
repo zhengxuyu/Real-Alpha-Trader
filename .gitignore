@@ -336,3 +336,4 @@ backend/metadata.db-shm
 backend/metadata.db.backup
 backend/metadata.db.corrupted
 backend/metadata.db-shm
+backend/metadata.db-shm
