@@ -417,6 +417,8 @@ This software is for educational and research purposes. Cryptocurrency trading c
 
 Trading cryptocurrencies involves substantial risk of loss. This open-source project does not assume any responsibility for account losses that may result from using this software. Use at your own risk.
 
+Note: The developers have no connection with **Binance**. We use the open APIs provided by **Binance**, and we do not take any responsibility for your use of the **Binance** API.
+
 ---
 
 **Status**: Active Development | **Version**: 0.3.1-alpha | **Last Updated**: 2025-10-31
@@ -425,4 +427,4 @@ Star this repository to follow development progress and experience real AI tradi
 
 ---
 
-**Note**: RAT (Real-Alpha-Trader) is a fork and enhancement of [open-alpha-arena](https://github.com/etrobot/open-alpha-arena) by [etrobot](https://github.com/etrobot). We are grateful for the original work and continue to build upon it.
+**Note**: RAT (Real-Alpha-Trader) is a fork and enhancement of [Hyper-Alpha-Arena](https://github.com/zhengxuyu/Hyper-Alpha-Arena). We are grateful for the original work and continue to build upon it.
