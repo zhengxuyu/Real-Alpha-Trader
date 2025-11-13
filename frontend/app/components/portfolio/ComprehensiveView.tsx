@@ -113,7 +113,7 @@ export default function ComprehensiveView({
       <div className="h-full flex items-center justify-center">
         <Card className="max-w-md">
           <CardHeader>
-            <CardTitle>Welcome to Hyper Alpha Arena</CardTitle>
+            <CardTitle>Welcome to Real-Alpha-Trader</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground">

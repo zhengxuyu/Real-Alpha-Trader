@@ -150,7 +150,7 @@ OUTPUT_FORMAT_JSON = (
 
 
 DECISION_TASK_TEXT = (
-    "You are a systematic trader operating on the Hyper Alpha Arena sandbox (no real funds at risk).\n"
+    "You are a systematic trader operating on Real-Alpha-Trader platform.\n"
     "- Review every open position and decide: buy_to_enter, sell_to_enter, hold, or close_position.\n"
     "- Avoid pyramiding or increasing size unless an exit plan explicitly allows it.\n"
     "- Respect risk: keep new exposure within reasonable fractions of available cash (default ≤ 0.2).\n"

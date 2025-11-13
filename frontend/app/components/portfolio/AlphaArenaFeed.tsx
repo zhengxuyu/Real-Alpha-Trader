@@ -335,8 +335,8 @@ export default function AlphaArenaFeed({
           lastFetched: Date.now(),
         })
       } catch (err) {
-        console.error('Failed to load Hyper Alpha Arena feed:', err)
-        const message = err instanceof Error ? err.message : 'Failed to load Hyper Alpha Arena data'
+        console.error('Failed to load Real-Alpha-Trader feed:', err)
+        const message = err instanceof Error ? err.message : 'Failed to load Real-Alpha-Trader data'
         setError(message)
       } finally {
         setLoading(false)

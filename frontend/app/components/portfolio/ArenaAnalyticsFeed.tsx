@@ -237,7 +237,7 @@ export default function ArenaAnalyticsFeed({
           lastFetched: Date.now(),
         })
       } catch (err) {
-        console.error('Failed to load Hyper Alpha Arena analytics:', err)
+        console.error('Failed to load Real-Alpha-Trader analytics:', err)
         const message = err instanceof Error ? err.message : 'Failed to load analytics data'
         setError(message)
       } finally {
