@@ -63,7 +63,7 @@ interface Trade { id: number; order_id: number; account_id: number; symbol: stri
 
 const PAGE_TITLES: Record<string, string> = {
   portfolio: 'Crypto Trading',
-  comprehensive: 'Hyper Alpha Arena',
+  comprehensive: 'Real-Alpha-Trader',
   'system-logs': 'System Logs',
   'prompt-management': 'Prompt Templates',
   'trader-management': 'AI Trader Management',

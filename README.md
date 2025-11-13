@@ -1,34 +1,39 @@
- # <img width="40" height="40" alt="logo_app" src="https://github.com/user-attachments/assets/911ba846-a08b-4e3e-b119-ec1e78347288" style="vertical-align: middle;" /> Hyper Alpha Arena
+# <img width="40" height="40" alt="logo_app" src="https://github.com/user-attachments/assets/911ba846-a08b-4e3e-b119-ec1e78347288" style="vertical-align: middle;" /> RAT (Real-Alpha-Trader)
 
-> An open-source AI trading competition platform with Hyperliquid integration for real cryptocurrency trading.
+> An open-source AI trading platform with **full real cryptocurrency trading support** via [Binance](https://www.binance.com/) APIs. Support multiple AI traders trading simultaneously. Real trading is a core feature and key differentiator of this platform. Additional broker support (Bybit, etc.) coming soon.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![GitHub stars](https://img.shields.io/github/stars/HammerGPT/Hyper-Alpha-Arena)](https://github.com/HammerGPT/Hyper-Alpha-Arena/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/HammerGPT/Hyper-Alpha-Arena)](https://github.com/HammerGPT/Hyper-Alpha-Arena/network)
 
 ## Overview
 
-Hyper Alpha Arena is an advanced AI trading competition platform where multiple Large Language Models (LLMs) compete in live cryptocurrency trading. Inspired by [nof1 Alpha Arena](https://nof1.ai), this platform enables AI models like GPT-5, Claude, Deepseek, and others to autonomously trade crypto assets and compete on a real-time leaderboard.
+RAT (Real-Alpha-Trader) is the **first** open-source AI trading platform that enables multiple Large Language Models (LLMs) to trade cryptocurrencies simultaneously in real markets. Inspired by [nof1 Alpha Arena](https://nof1.ai) and [Hyper Alpha Arena](https://github.com/zhengxuyu/Hyper-Alpha-Arena), this platform allows you to deploy multiple AI trading agents (GPT-5, Claude, Deepseek, etc.) that can autonomously execute real trades on cryptocurrency exchanges.
 
-**Key Highlight**: Integration with [Hyperliquid](https://hyperliquid.xyz/) for real perpetual futures trading (currently in development).
+**⚠️ Project Status**: This is a newly started project and is not yet fully complete. We welcome contributions, pull requests, and suggestions from the community to help improve and complete the platform.
+
+**Key Highlights**:
+
+- **Real Trading** ⭐: **Full support for real cryptocurrency trading** with [Binance](https://www.binance.com/) APIs. Support for additional brokers will be added in future updates.
+- **Multi-Trader Support**: Run multiple AI traders simultaneously, each with independent strategies and accounts
+- **Live Market Execution**: Direct connection to real cryptocurrency exchanges for actual trade execution
 
 ### Project Origin
 
-This project is based on [open-alpha-arena](https://github.com/etrobot/open-alpha-arena) by etrobot. We extend our gratitude to the original author for laying the groundwork. Our fork introduces critical bug fixes, UI enhancements, and most importantly, real trading capabilities through Hyperliquid integration.
+This project is based on [Hyper Alpha Arena](https://github.com/zhengxuyu/Hyper-Alpha-Arena). We extend our sincere gratitude to the original author for laying the groundwork. RAT (Real-Alpha-Trader) extends the platform with real trading capabilities, enabling users to execute actual trades on cryptocurrency exchanges through broker APIs.
 
 ## Features
 
 ### Current Features (v0.3.0-alpha)
 
-- **Multi-Model LLM Support**: OpenAI API compatible models
+- **Real Trading** ⭐: **Full support for real cryptocurrency trading** - Execute actual trades on cryptocurrency exchanges via [Binance](https://www.binance.com/) APIs. Support for additional brokers will be added in future updates. This is a core feature that sets RAT apart from other platforms.
+- **Multi-Trader Support**: Run multiple AI traders simultaneously, each operating independently with their own strategies and accounts
+- **Multi-Model LLM Support**: OpenAI API compatible models (GPT-5, Claude, Deepseek, etc.)
 - **Prompt Template Management**: NEW FEATURE
   - Customizable AI trading prompts with visual editor
   - Account-specific prompt binding system
   - Default and Pro templates with restore functionality
   - Automatic fallback to default template for unbound accounts
-- **Paper Trading**: Simulated trading environment for testing AI strategies
 - **Real-time Market Data**: Live cryptocurrency price feeds via ccxt
-- **AI Trader Management**: Create and manage multiple AI trading agents
+- **AI Trader Management**: Create and manage multiple AI trading agents with independent configurations
 - **Real-time Trading Triggers**: Event-driven AI trading with configurable strategies
   - Real-time trigger: Execute on every market update
   - Interval trigger: Execute at fixed time intervals
@@ -46,27 +51,30 @@ This project is based on [open-alpha-arena](https://github.com/etrobot/open-alph
 
 ### Upcoming Features
 
-- **Hyperliquid Integration**: Real perpetual futures trading on testnet and mainnet
-- **Real-time WebSocket Data**: Direct market data from Hyperliquid
+- **Additional Broker Support**: Integration with more brokers.
+- **Enhanced Trading Features**: Additional trading features and optimizations
 - **Advanced Risk Management**: Position limits, leverage controls, stop-loss/take-profit
-- **Competition System**: Leaderboard with risk-adjusted metrics (Sharpe ratio, win rate)
 - **Model Chat Interface**: View AI reasoning and decision explanations
+- **Performance Analytics**: Track and compare performance across multiple AI traders
 
 ## Screenshots
 
 ### Main Dashboard
+
 <img width="2198" height="1141" alt="image" src="https://github.com/user-attachments/assets/a5363a13-7977-4aa2-9441-da2376e3074f" />
 
 ### Model Chat Prompt
+
 <img width="1843" height="1111" alt="image" src="https://github.com/user-attachments/assets/daafe0ab-a584-46ba-8805-d50aa4696ad3" />
 
 ### AI Trader and Strategy Settings
+
 <img width="1849" height="1107" alt="image" src="https://github.com/user-attachments/assets/e59d59ae-0cf2-4665-9d59-7fc016e55d3b" />
 
 <img width="1851" height="1111" alt="image" src="https://github.com/user-attachments/assets/ce275ccb-6800-4b92-9317-65271955999e" />
 
-
 ### System Log
+
 <img width="1854" height="1120" alt="image" src="https://github.com/user-attachments/assets/59fe62ac-77a4-498b-a09a-ca8f8ec19620" />
 
 ## Quick Start
@@ -81,8 +89,8 @@ This project is based on [open-alpha-arena](https://github.com/etrobot/open-alph
 #### 🍎 macOS/Linux
 
 ```bash
-git clone https://github.com/HammerGPT/Hyper-Alpha-Arena.git
-cd Hyper-Alpha-Arena
+git clone https://github.com/your-username/Real-Alpha-Trader.git
+cd Real-Alpha-Trader
 
 # Make script executable and start the application
 chmod +x start_arena.sh
@@ -92,13 +100,14 @@ chmod +x start_arena.sh
 #### 🪟 Windows
 
 ```powershell
-git clone https://github.com/HammerGPT/Hyper-Alpha-Arena.git
-cd Hyper-Alpha-Arena
+git clone https://github.com/your-username/Real-Alpha-Trader.git
+cd Real-Alpha-Trader
 
 .\start_arena.ps1
 ```
 
 **Note**: If you encounter PowerShell execution policy issues, run:
+
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
@@ -108,6 +117,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 The startup script automatically handles all setup and runs on port 8802:
 
 #### 🍎 macOS/Linux
+
 ```bash
 # Start the application
 ./start_arena.sh
@@ -117,6 +127,7 @@ The startup script automatically handles all setup and runs on port 8802:
 ```
 
 #### 🪟 Windows
+
 ```powershell
 # Start the application
 .\start_arena.ps1
@@ -126,6 +137,7 @@ The startup script automatically handles all setup and runs on port 8802:
 ```
 
 The startup script will:
+
 - Auto-create Python virtual environment and install dependencies
 - Auto-install pnpm if not present (no sudo required)
 - Build and deploy frontend automatically
@@ -147,11 +159,12 @@ The startup script will:
 4. Configure trading strategy:
    - Trigger Mode: Real-time (recommended for active trading)
    - Enable Strategy: Toggle to activate
-5. Monitor logs in System Logs section to verify setup
+5. Create additional AI traders (optional): Repeat steps 3-4 to set up multiple traders that will trade simultaneously
+6. Monitor logs in System Logs section to verify setup and track all traders' activities
 
 ## Supported Models
 
-Hyper Alpha Arena supports any OpenAI API compatible language model, including:
+RAT (Real-Alpha-Trader) supports any OpenAI API compatible language model, including:
 
 - **OpenAI**: GPT-5 series, o1 series, GPT-4o, GPT-4
 - **Anthropic**: Claude (via compatible endpoints)
@@ -178,6 +191,7 @@ The platform automatically handles model-specific configurations and parameter d
 │   ┌──────────────────────────────┐   │
 │   │  Trading Engine              │   │
 │   │  - Real-time Strategy Manager│   │
+│   │  - Multi-trader Coordinator  │   │
 │   │  - Multi-model LLM Router    │   │
 │   │  - Order Execution           │   │
 │   └──────────────────────────────┘   │
@@ -209,7 +223,8 @@ The platform automatically handles model-specific configurations and parameter d
 ┌────────────────────────────────────────┐
 │   External Services                    │
 │   - OpenAI / Anthropic / Deepseek     │
-│   - Hyperliquid (coming soon)         │
+│   - Binance (Real Trading) ⭐        │
+│   - More brokers (coming soon)       │
 │   - Cryptocurrency Exchanges (ccxt)   │
 └────────────────────────────────────────┘
 ```
@@ -217,6 +232,7 @@ The platform automatically handles model-specific configurations and parameter d
 ## Tech Stack
 
 ### Backend
+
 - **Framework**: FastAPI 0.116.1
 - **Runtime**: Python 3.11
 - **Package Manager**: uv 0.9.5
@@ -225,6 +241,7 @@ The platform automatically handles model-specific configurations and parameter d
 - **Market Data**: ccxt 4.5.11
 
 ### Frontend
+
 - **Framework**: React 18.2.0
 - **Build Tool**: Vite 4.5.14
 - **Language**: TypeScript
@@ -234,24 +251,28 @@ The platform automatically handles model-specific configurations and parameter d
 ## Roadmap
 
 ### Phase 1: Core Infrastructure (In Progress)
-- [ ] Complete Hyperliquid Python SDK integration
-- [ ] Implement testnet trading engine
-- [ ] Add real-time Hyperliquid WebSocket data
+
+- [x] Complete Binance API integration
+- [x] Implement real trading engine
+- [ ] Support for additional brokers (Bybit, etc.)
 - [ ] Build comprehensive risk management system
 
 ### Phase 2: Trading System Enhancement
+
 - [ ] Advanced AI decision engine with market context
 - [ ] Multi-model prompt optimization
 - [ ] Decision validation and safety checks
 - [ ] Model performance analytics
 
-### Phase 3: Competition Features
-- [ ] Real-time leaderboard with risk metrics
-- [ ] Season/round management system
+### Phase 3: Multi-Trader & Analytics
+
+- [ ] Enhanced multi-trader coordination and management
+- [ ] Cross-trader performance comparison and analytics
 - [ ] Model chat interface for decision transparency
-- [ ] Historical performance tracking
+- [ ] Historical performance tracking and reporting
 
 ### Phase 4: Advanced Features
+
 - [ ] Multiple exchange support (Binance, Bybit, etc.)
 - [ ] Backtesting framework
 - [ ] User-submitted AI agents
@@ -263,7 +284,7 @@ The platform automatically handles model-specific configurations and parameter d
 1. **LLM API Compatibility**: Fixed parameter issues for GPT-5, o1, and Deepseek models
 2. **Performance Optimization**: 10x faster account operations (5s to 0.5s)
 3. **Enhanced UI**: Improved interface mimicking Alpha Arena design
-4. **Hyperliquid Integration**: Real trading capabilities (in development)
+4. **Real Trading Integration** ⭐: **Full real trading capabilities** via Binance APIs (with plans to support additional brokers) - This is a core feature and key differentiator of RAT (Real-Alpha-Trader)
 5. **System Logging & Monitoring**: Comprehensive real-time logging system
    - In-memory log collector (500 entries)
    - Auto-categorization (price updates, AI decisions, errors)
@@ -288,23 +309,27 @@ The platform automatically handles model-specific configurations and parameter d
 
 **Problem**: Windows PowerShell execution policy error
 **Solution**:
+
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
 **Problem**: "此时不应有 ..." error on Windows
 **Solution**: Ensure you're using PowerShell (not Command Prompt):
+
 ```powershell
 .\start_arena.ps1
 ```
 
 **Problem**: Port 8802 already in use
 **Solution**:
+
 - Linux/macOS: `./start_arena.sh stop`
 - Windows: `.\start_arena.ps1 stop` (run from project root)
 
 **Problem**: Virtual environment not found
 **Solution**: Create the virtual environment manually:
+
 ```bash
 # Linux/macOS
 cd backend && python -m venv .venv && source .venv/bin/activate && pip install -e .
@@ -315,6 +340,7 @@ cd backend && python -m venv .venv && .venv\Scripts\activate && pip install -e .
 
 **Problem**: Frontend build fails
 **Solution**: Clear cache and reinstall:
+
 ```bash
 rm -rf node_modules package-lock.json  # Linux/macOS
 rmdir /s node_modules && del package-lock.json  # Windows
@@ -335,17 +361,24 @@ Please star and fork this repository to stay updated with development progress.
 
 ## Resources
 
-### Official Alpha Arena
-- Website: https://nof1.ai/leaderboard
-- Season 1 Results: DeepSeek +35%, GPT-5 -27%, Gemini -33%
+### Inspiration
 
-### Hyperliquid
-- Official Docs: https://hyperliquid.gitbook.io/
-- Python SDK: https://github.com/hyperliquid-dex/hyperliquid-python-sdk
-- Testnet: https://api.hyperliquid-testnet.xyz
+- **nof1 Alpha Arena**: https://nof1.ai - An AI trading platform that inspired this project
+
+### Supported Exchanges
+
+- **Binance** (Currently Supported)
+  - Official Website: https://www.binance.com/
+  - API Docs: https://binance-docs.github.io/apidocs/
+
+### Upcoming Exchange Support
+
+- **Bybit** and other major exchanges (coming soon)
 
 ### Original Project
-- Open Alpha Arena: https://github.com/etrobot/open-alpha-arena
+
+- **Open Alpha Arena** by [etrobot](https://github.com/etrobot): https://github.com/etrobot/open-alpha-arena
+  - This project is the foundation of RAT (Real-Alpha-Trader). We are deeply grateful to etrobot for creating and open-sourcing the original project.
 
 ## Community
 
@@ -363,17 +396,29 @@ When using this software, please include attribution to Heliki AI Community in y
 
 ## Acknowledgments
 
-- **etrobot** - Original open-alpha-arena project
-- **nof1.ai** - Inspiration from Alpha Arena
-- **Hyperliquid** - Decentralized perpetual exchange platform
-- **OpenAI, Anthropic, Deepseek** - LLM providers
+We would like to express our sincere gratitude to the following projects and communities:
+
+- **[etrobot](https://github.com/etrobot)** - Original [open-alpha-arena](https://github.com/etrobot/open-alpha-arena) project that served as the foundation for RAT (Real-Alpha-Trader)
+- **[nof1.ai](https://nof1.ai)** - Inspiration from Alpha Arena platform
+- **[Binance](https://www.binance.com/)** - Cryptocurrency exchange platform (currently supported)
+- **OpenAI, Anthropic, Deepseek** - LLM providers that power the AI trading agents
 
 ## Disclaimer
 
 This software is for educational and research purposes. Cryptocurrency trading carries significant risk. Always conduct thorough testing on testnet before using real funds. The developers are not responsible for any financial losses incurred through the use of this software.
 
+**⚠️ 重要风险提示（Important Risk Warning）**：
+
+**投资有风险，入市需谨慎。本开源项目不对可能造成的账户亏损承担任何责任。**
+
+Trading cryptocurrencies involves substantial risk of loss. This open-source project does not assume any responsibility for account losses that may result from using this software. Use at your own risk.
+
 ---
 
 **Status**: Active Development | **Version**: 0.3.1-alpha | **Last Updated**: 2025-10-31
 
-Star this repository to follow development progress and receive updates on Hyperliquid integration.
+Star this repository to follow development progress and experience real AI trading with Binance integration (and more brokers coming soon).
+
+---
+
+**Note**: RAT (Real-Alpha-Trader) is a fork and enhancement of [open-alpha-arena](https://github.com/etrobot/open-alpha-arena) by [etrobot](https://github.com/etrobot). We are grateful for the original work and continue to build upon it.

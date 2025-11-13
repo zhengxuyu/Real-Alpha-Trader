@@ -6,7 +6,7 @@ interface HeaderProps {
   title?: string
 }
 
-export default function Header({ title = 'Hyper Alpha Arena' }: HeaderProps) {
+export default function Header({ title = 'Real-Alpha-Trader' }: HeaderProps) {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof document === 'undefined') return 'dark'
     return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
