@@ -421,7 +421,7 @@ Note: The developers have no connection with **Binance**. We use the open APIs p
 
 ---
 
-**Status**: Active Development | **Version**: 0.3.1-alpha | **Last Updated**: 2025-10-31
+**Status**: Active Development | **Version**: 0.1.0-alpha | **Last Updated**: 2025-11-13
 
 Star this repository to follow development progress and experience real AI trading with Binance integration (and more brokers coming soon).
 
