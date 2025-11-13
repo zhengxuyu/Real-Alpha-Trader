@@ -4,6 +4,10 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
+<div align="center">
+  <img src="rat.png" alt="RAT (Real-Alpha-Trader) Dashboard" width="100%">
+</div>
+
 ## Overview
 
 RAT (Real-Alpha-Trader) is the **first** open-source AI trading platform that enables multiple Large Language Models (LLMs) to trade cryptocurrencies simultaneously in real markets. Inspired by [nof1 Alpha Arena](https://nof1.ai) and [Hyper Alpha Arena](https://github.com/zhengxuyu/Hyper-Alpha-Arena), this platform allows you to deploy multiple AI trading agents (GPT-5, Claude, Deepseek, etc.) that can autonomously execute real trades on cryptocurrency exchanges.
