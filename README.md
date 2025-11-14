@@ -379,19 +379,6 @@ Please star and fork this repository to stay updated with development progress.
 
 - **Bybit** and other major exchanges (coming soon)
 
-### Original Project
-
-- **Open Alpha Arena** by [etrobot](https://github.com/etrobot): https://github.com/etrobot/open-alpha-arena
-  - This project is the foundation of RAT (Real-Alpha-Trader). We are deeply grateful to etrobot for creating and open-sourcing the original project.
-
-## Community
-
-This project is developed and maintained by **Heliki AI Community**.
-
-- Website: https://www.heliki.com/
-- Focus: AI trading research and practical applications
-- Community: 2+ years of AI practitioner collaboration
-
 ## License
 
 This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
@@ -402,10 +389,7 @@ When using this software, please include attribution to Heliki AI Community in y
 
 We would like to express our sincere gratitude to the following projects and communities:
 
-- **[etrobot](https://github.com/etrobot)** - Original [open-alpha-arena](https://github.com/etrobot/open-alpha-arena) project that served as the foundation for RAT (Real-Alpha-Trader)
-- **[nof1.ai](https://nof1.ai)** - Inspiration from Alpha Arena platform
-- **[Binance](https://www.binance.com/)** - Cryptocurrency exchange platform (currently supported)
-- **OpenAI, Anthropic, Deepseek** - LLM providers that power the AI trading agents
+- **[Hyper-Alpha-Arena]([https://github.com/etrobot](https://github.com/HammerGPT/Hyper-Alpha-Arena))** - Original project that served as the foundation for RAT (Real-Alpha-Trader)
 
 ## Disclaimer
 
@@ -426,5 +410,3 @@ Note: The developers have no connection with **Binance**. We use the open APIs p
 Star this repository to follow development progress and experience real AI trading with Binance integration (and more brokers coming soon).
 
 ---
-
-**Note**: RAT (Real-Alpha-Trader) is a fork and enhancement of [Hyper-Alpha-Arena](https://github.com/zhengxuyu/Hyper-Alpha-Arena). We are grateful for the original work and continue to build upon it.
