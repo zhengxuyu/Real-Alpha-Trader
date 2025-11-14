@@ -8,7 +8,7 @@
   <img src="rat.png" alt="RAT (Real-Alpha-Trader) Dashboard" width="100%">
 </div>
 
-**⭐ Star this repo [Real-Alpha-Trader](https://github.com/zhengxuyu/Real-Alpha-Trader) to follow development progress and experience real AI trading with Binance integration (and more brokers coming soon).**
+**⭐ Star this repo [Real-Alpha-Trader](https://github.com/zhengxuyu/Real-Alpha-Trader) to follow development progress and experience real AI trading.**
 
 
 ## Overview
