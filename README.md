@@ -8,6 +8,9 @@
   <img src="rat.png" alt="RAT (Real-Alpha-Trader) Dashboard" width="100%">
 </div>
 
+**⭐ Star this [Real-Alpha-Trader](https://github.com/zhengxuyu/Real-Alpha-Trader) to follow development progress and experience real AI trading with Binance integration (and more brokers coming soon).**
+
+
 ## Overview
 
 RAT (Real-Alpha-Trader) is the **first** open-source AI trading platform that enables multiple Large Language Models (LLMs) to trade cryptocurrencies simultaneously in real markets. Inspired by [nof1 Alpha Arena](https://nof1.ai) and [Hyper Alpha Arena](https://github.com/zhengxuyu/Hyper-Alpha-Arena), this platform allows you to deploy multiple AI trading agents (GPT-5, Claude, Deepseek, etc.) that can autonomously execute real trades on cryptocurrency exchanges.
@@ -389,7 +392,7 @@ When using this software, please include attribution to Heliki AI Community in y
 
 We would like to express our sincere gratitude to the following projects and communities:
 
-- **[Hyper-Alpha-Arena]([https://github.com/etrobot](https://github.com/HammerGPT/Hyper-Alpha-Arena))** - Original project that served as the foundation for RAT (Real-Alpha-Trader)
+- **[Hyper-Alpha-Arena](https://github.com/etrobot](https://github.com/HammerGPT/Hyper-Alpha-Arena)** - Original project that served as the foundation for RAT (Real-Alpha-Trader)
 
 ## Disclaimer
 
@@ -406,7 +409,4 @@ Note: The developers have no connection with **Binance**. We use the open APIs p
 ---
 
 **Status**: Active Development | **Version**: 0.1.0-alpha | **Last Updated**: 2025-11-13
-
-Star this repository to follow development progress and experience real AI trading with Binance integration (and more brokers coming soon).
-
 ---
