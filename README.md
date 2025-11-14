@@ -96,7 +96,7 @@ This project is based on [Hyper Alpha Arena](https://github.com/zhengxuyu/Hyper-
 #### 🍎 macOS/Linux
 
 ```bash
-git clone https://github.com/your-username/Real-Alpha-Trader.git
+git clone https://github.com/zhengxuyu/Real-Alpha-Trader.git
 cd Real-Alpha-Trader
 
 # Make script executable and start the application
@@ -107,7 +107,7 @@ chmod +x start_arena.sh
 #### 🪟 Windows
 
 ```powershell
-git clone https://github.com/your-username/Real-Alpha-Trader.git
+git clone https://github.com/zhengxuyu/Real-Alpha-Trader.git
 cd Real-Alpha-Trader
 
 .\start_arena.ps1
