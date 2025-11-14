@@ -23,8 +23,8 @@ class PriceCache:
         self.history_seconds = history_seconds
         self.lock = Lock()
 
-    def get(self, symbol: str, market: str) -> Optional[float]:
-        """Get cached price if still within TTL."""
+    def get(self, symbol: str, market: str) -> Optional[Tuple[float, float]]:
+        """Get cached (price, timestamp) if still within TTL."""
         key = (symbol, market)
         current_time = time.time()
 
@@ -35,8 +35,8 @@ class PriceCache:
 
             price, timestamp = entry
             if current_time - timestamp < self.ttl_seconds:
-                logger.debug("Cache hit for %s.%s: %s", symbol, market, price)
-                return price
+                logger.debug("Cache hit for %s.%s: %s @ %s", symbol, market, price, timestamp)
+                return price, timestamp
 
             # TTL expired – purge entry
             del self.cache[key]
@@ -115,9 +115,18 @@ class PriceCache:
 price_cache = PriceCache(ttl_seconds=30, history_seconds=3600)
 
 
-def get_cached_price(symbol: str, market: str = "CRYPTO") -> Optional[float]:
-    """Get price from cache if available."""
+def get_cached_price_with_timestamp(symbol: str, market: str = "CRYPTO") -> Optional[Tuple[float, float]]:
+    """Get (price, timestamp) from cache if available."""
     return price_cache.get(symbol, market)
+
+
+def get_cached_price(symbol: str, market: str = "CRYPTO") -> Optional[float]:
+    """Get price from cache if available (without timestamp)."""
+    cached = price_cache.get(symbol, market)
+    if cached is None:
+        return None
+    price, _ = cached
+    return price
 
 
 def cache_price(symbol: str, market: str, price: float) -> None:

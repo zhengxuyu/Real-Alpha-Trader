@@ -9,8 +9,12 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from services.market_data import (get_kline_data, get_last_price,
-                                  get_market_status)
+from services.market_data import (
+    get_kline_data,
+    get_last_price,
+    get_last_price_with_timestamp,
+    get_market_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +63,7 @@ class MarketStatusResponse(BaseModel):
 
 @router.get("/price/{symbol}", response_model=PriceResponse)
 async def get_crypto_price(symbol: str, market: str = "US"):
-    """
-    Get latest crypto price
+    """Get latest crypto price with accurate event timestamp.
 
     Args:
         symbol: crypto symbol, such as 'MSFT'
@@ -70,13 +73,14 @@ async def get_crypto_price(symbol: str, market: str = "US"):
         Response containing latest price
     """
     try:
-        price = get_last_price(symbol, market)
-        
+        price, ts_seconds = get_last_price_with_timestamp(symbol, market)
+
         return PriceResponse(
             symbol=symbol,
             market=market,
             price=price,
-            timestamp=int(time.time() * 1000)
+            # Convert seconds to ms for frontend
+            timestamp=int(ts_seconds * 1000)
         )
     except Exception as e:
         logger.error(f"Failed to get crypto price: {e}")
@@ -85,37 +89,37 @@ async def get_crypto_price(symbol: str, market: str = "US"):
 
 @router.get("/prices", response_model=List[PriceResponse])
 async def get_multiple_prices(symbols: str, market: str = "hyperliquid"):
-    """
-    Get latest prices for multiple cryptos in batch
+    """Get latest prices for multiple cryptos in batch.
 
-    Returns:
-        Response list containing multiple crypto prices
+    Each symbol uses its own event timestamp. If the price comes from cache,
+    the cached timestamp is used; otherwise, the fresh API fetch timestamp is used.
     """
     try:
         symbol_list = [s.strip() for s in symbols.split(',') if s.strip()]
-        
+
         if not symbol_list:
             raise HTTPException(status_code=400, detail="crypto symbol list cannot be empty")
-        
+
         if len(symbol_list) > 20:
             raise HTTPException(status_code=400, detail="Maximum 20 crypto symbols supported")
-        
-        results = []
-        current_timestamp = int(time.time() * 1000)
-        
+
+        results: List[PriceResponse] = []
+
         for symbol in symbol_list:
             try:
-                price = get_last_price(symbol, market)
-                results.append(PriceResponse(
-                    symbol=symbol,
-                    market=market,
-                    price=price,
-                    timestamp=current_timestamp
-                ))
+                price, ts_seconds = get_last_price_with_timestamp(symbol, market)
+                results.append(
+                    PriceResponse(
+                        symbol=symbol,
+                        market=market,
+                        price=price,
+                        timestamp=int(ts_seconds * 1000),
+                    )
+                )
             except Exception as e:
                 logger.warning(f"Failed to get {symbol} price: {e}")
                 # Continue processing other cryptos without interrupting the entire request
-                
+
         return results
     except HTTPException:
         raise
