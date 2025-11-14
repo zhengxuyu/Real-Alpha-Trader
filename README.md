@@ -26,7 +26,7 @@ This project is based on [Hyper Alpha Arena](https://github.com/zhengxuyu/Hyper-
 
 ## Features
 
-### Current Features (v0.3.0-alpha)
+### Current Features (v0.2.0-alpha)
 
 - **Real Trading** ⭐: **Full support for real cryptocurrency trading** - Execute actual trades on cryptocurrency exchanges via [Binance](https://www.binance.com/) APIs. Support for additional brokers will be added in future updates. This is a core feature that sets RAT apart from other platforms.
 - **Multi-Trader Support**: Run multiple AI traders simultaneously, each operating independently with their own strategies and accounts
