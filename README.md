@@ -64,26 +64,6 @@ This project is based on [Hyper Alpha Arena](https://github.com/zhengxuyu/Hyper-
 - **Model Chat Interface**: View AI reasoning and decision explanations
 - **Performance Analytics**: Track and compare performance across multiple AI traders
 
-## Screenshots
-
-### Main Dashboard
-
-<img width="2198" height="1141" alt="image" src="https://github.com/user-attachments/assets/a5363a13-7977-4aa2-9441-da2376e3074f" />
-
-### Model Chat Prompt
-
-<img width="1843" height="1111" alt="image" src="https://github.com/user-attachments/assets/daafe0ab-a584-46ba-8805-d50aa4696ad3" />
-
-### AI Trader and Strategy Settings
-
-<img width="1849" height="1107" alt="image" src="https://github.com/user-attachments/assets/e59d59ae-0cf2-4665-9d59-7fc016e55d3b" />
-
-<img width="1851" height="1111" alt="image" src="https://github.com/user-attachments/assets/ce275ccb-6800-4b92-9317-65271955999e" />
-
-### System Log
-
-<img width="1854" height="1120" alt="image" src="https://github.com/user-attachments/assets/59fe62ac-77a4-498b-a09a-ca8f8ec19620" />
-
 ## Quick Start
 
 ### Prerequisites
