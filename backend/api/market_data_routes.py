@@ -66,7 +66,7 @@ async def get_crypto_price(symbol: str, market: str = "US"):
     """Get latest crypto price with accurate event timestamp.
 
     Args:
-        symbol: crypto symbol, such as 'MSFT'
+        symbol: crypto symbol, such as 'BTC'
         market: Market symbol, default 'US'
 
     Returns:
