@@ -324,12 +324,12 @@ export default function SettingsDialog({ open, onOpenChange, onAccountUpdated, e
                       />
                     </div>
                     <Input
-                      placeholder="Base URL (e.g., https://api.openai.com/v1)"
+                      placeholder="LLM Base URL (e.g., https://api.openai.com/v1)"
                       value={newAccount.base_url || ''}
                       onChange={(e) => setNewAccount({ ...newAccount, base_url: e.target.value })}
                     />
                     <Input
-                      placeholder="API Key"
+                      placeholder="LLM API Key"
                       type="password"
                       value={newAccount.api_key || ''}
                       onChange={(e) => setNewAccount({ ...newAccount, api_key: e.target.value })}
@@ -389,12 +389,12 @@ export default function SettingsDialog({ open, onOpenChange, onAccountUpdated, e
                         />
                       </div>
                       <Input
-                        placeholder="Base URL"
+                        placeholder="LLM Base URL"
                         value={editAccount.base_url || ''}
                         onChange={(e) => setEditAccount({ ...editAccount, base_url: e.target.value })}
                       />
                       <Input
-                        placeholder="API Key"
+                        placeholder="LLM API Key"
                         type="password"
                         value={editAccount.api_key || ''}
                         onChange={(e) => setEditAccount({ ...editAccount, api_key: e.target.value })}
