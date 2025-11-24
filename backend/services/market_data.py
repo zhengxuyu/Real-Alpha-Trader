@@ -7,7 +7,6 @@ from .hyperliquid_market_data import (
     get_kline_data_from_hyperliquid,
     get_last_price_from_hyperliquid,
     get_market_status_from_hyperliquid,
-    hyperliquid_client,
 )
 
 logger = logging.getLogger(__name__)
