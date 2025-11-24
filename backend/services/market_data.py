@@ -16,8 +16,12 @@ logger = logging.getLogger(__name__)
 def get_last_price_with_timestamp(symbol: str, market: str = "CRYPTO") -> Tuple[float, float]:
     """Get latest price and its event timestamp.
 
+    Args:
+        symbol (str): The trading pair symbol (e.g., "BTC/USD").
+        market (str, optional): The market type. Defaults to "CRYPTO".
+
     Returns:
-        (price, timestamp_seconds)
+        Tuple[float, float]: The latest price and its event timestamp in seconds.
     """
     key = f"{symbol}.{market}"
 
