@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import FlipNumber from './FlipNumber'
 
 interface RealtimePriceProps {
@@ -11,76 +11,122 @@ export default function RealtimePrice({ symbol, wsRef, className = "" }: Realtim
   const [price, setPrice] = useState<number | null>(null)
   const [priceChange, setPriceChange] = useState<'up' | 'down' | null>(null)
 
+  // Shared latest timestamp in milliseconds across WebSocket + HTTP
+  const lastTimestampRef = useRef<number>(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Helper to apply a new price with animation, assuming timestamp has been checked
+  const applyPriceUpdate = (newPrice: number) => {
+    setPrice(prevPrice => {
+      if (prevPrice !== null && prevPrice !== newPrice) {
+        setPriceChange(newPrice > prevPrice ? 'up' : 'down')
+        // Clear the change indicator after animation
+        setTimeout(() => setPriceChange(null), 1000)
+      }
+      return newPrice
+    })
+  }
+
+  useEffect(() => {
+    // Reset when symbol changes
+    lastTimestampRef.current = 0
+    setPrice(null)
+  }, [symbol])
+
+
   useEffect(() => {
     // WebSocket listener for real-time price updates
-    if (wsRef?.current) {
-      const handleMessage = (event: MessageEvent) => {
-        try {
-          const message = JSON.parse(event.data)
-          // Handle price updates from WebSocket
-          if (message?.type === 'price_update' && message.symbol === symbol) {
-            const newPrice = Number(message.price)
-            if (!isNaN(newPrice)) {
-              setPrice(prevPrice => {
-                // Set price change direction for animation
-                if (prevPrice !== null && prevPrice !== newPrice) {
-                  setPriceChange(newPrice > prevPrice ? 'up' : newPrice < prevPrice ? 'down' : null)
-                  // Clear the change indicator after animation
-                  setTimeout(() => setPriceChange(null), 1000)
-                }
-                return newPrice
-              })
-            }
+    if (!wsRef?.current) return
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const message = JSON.parse(event.data)
+        if (message?.type === 'price_update' && message.symbol === symbol) {
+          const newPrice = Number(message.price)
+          if (Number.isNaN(newPrice)) return
+
+          // Backend sends `timestamp` as seconds; normalize to ms
+          let tsMs: number | null = null
+          if (typeof message.timestamp === 'number') {
+            tsMs = message.timestamp * 1000
+          } else if (typeof message.timestamp_ms === 'number') {
+            tsMs = message.timestamp_ms
           }
-        } catch {
-          // Ignore non-JSON messages
+          if (tsMs == null) {
+            tsMs = Date.now()
+          }
+
+          if (tsMs <= lastTimestampRef.current) return
+          lastTimestampRef.current = tsMs
+
+          applyPriceUpdate(newPrice)
         }
+      } catch {
+        // Ignore non-JSON messages
       }
+    }
 
-      const ws = wsRef.current
-      ws.addEventListener('message', handleMessage)
+    const ws = wsRef.current
+    ws.addEventListener('message', handleMessage)
 
-      return () => {
-        ws.removeEventListener('message', handleMessage)
-      }
+    return () => {
+      ws.removeEventListener('message', handleMessage)
     }
   }, [wsRef, symbol])
 
   useEffect(() => {
-    // HTTP fallback for initial price fetch
+    // HTTP fallback for initial price fetch and as backup if WebSocket lags
+    let isMounted = true
+
     const fetchPrice = async () => {
+      if (!isMounted) return
+
+      // Cancel previous HTTP request if still in-flight
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
       try {
-        const response = await fetch(`/api/market/price/${symbol}`)
-        if (response.ok) {
-          const data = await response.json()
-          const newPrice = data.price
-          if (newPrice && !isNaN(newPrice)) {
-            setPrice(prevPrice => {
-              // Set price change direction for animation (only if no previous price)
-              if (prevPrice === null) {
-                return newPrice
-              }
-              if (prevPrice !== newPrice) {
-                setPriceChange(newPrice > prevPrice ? 'up' : newPrice < prevPrice ? 'down' : null)
-                // Clear the change indicator after animation
-                setTimeout(() => setPriceChange(null), 1000)
-              }
-              return newPrice
-            })
-          }
+        const response = await fetch(`/api/market/price/${symbol}`, {
+          signal: controller.signal,
+        })
+        if (!response.ok) return
+
+        const data = await response.json()
+        const newPrice = Number(data.price)
+        if (Number.isNaN(newPrice)) return
+
+        const tsMs: number =
+          typeof data.timestamp === 'number' ? data.timestamp : Date.now()
+
+        // Drop stale or duplicate responses
+        if (tsMs <= lastTimestampRef.current) return
+
+        lastTimestampRef.current = tsMs
+        applyPriceUpdate(newPrice)
+      } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          return
         }
-      } catch (error) {
         console.error(`Error fetching price for ${symbol}:`, error)
       }
     }
 
-    // Only fetch initially if no WebSocket or as fallback
+    // Initial fetch
     fetchPrice()
 
     // Reduced frequency since WebSocket should handle real-time updates
     const interval = setInterval(fetchPrice, 5000) // 5 seconds fallback
 
-    return () => clearInterval(interval)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
   }, [symbol])
 
   if (price === null) {
