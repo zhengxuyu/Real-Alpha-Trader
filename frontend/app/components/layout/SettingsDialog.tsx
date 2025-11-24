@@ -55,6 +55,8 @@ export default function SettingsDialog({ open, onOpenChange, onAccountUpdated, e
     base_url: '',
     api_key: 'default-key-please-update-in-settings',
     auto_trading_enabled: true,
+    binance_api_key: '',
+    binance_secret_key: '',
   })
   const [editAccount, setEditAccount] = useState<AIAccountCreate>({
     name: '',
@@ -131,9 +133,16 @@ export default function SettingsDialog({ open, onOpenChange, onAccountUpdated, e
         }
       }
 
-      console.log('Creating account with data:', newAccount)
       await createAccount(newAccount)
-      setNewAccount({ name: '', model: '', base_url: '', api_key: 'default-key-please-update-in-settings', auto_trading_enabled: true })
+      setNewAccount({
+        name: '',
+        model: '',
+        base_url: '',
+        api_key: 'default-key-please-update-in-settings',
+        auto_trading_enabled: true,
+        binance_api_key: '',
+        binance_secret_key: '',
+      })
       setShowAddForm(false)
       await loadAccounts()
 
@@ -324,6 +333,18 @@ export default function SettingsDialog({ open, onOpenChange, onAccountUpdated, e
                       type="password"
                       value={newAccount.api_key || ''}
                       onChange={(e) => setNewAccount({ ...newAccount, api_key: e.target.value })}
+                    />
+                    <Input
+                      placeholder="Binance API Key"
+                      type="password"
+                      value={newAccount.binance_api_key || ''}
+                      onChange={(e) => setNewAccount({ ...newAccount, binance_api_key: e.target.value })}
+                    />
+                    <Input
+                      placeholder="Binance Secret Key"
+                      type="password"
+                      value={newAccount.binance_secret_key || ''}
+                      onChange={(e) => setNewAccount({ ...newAccount, binance_secret_key: e.target.value })}
                     />
                     <label className="flex items-center gap-2 text-sm text-muted-foreground">
                       <input
